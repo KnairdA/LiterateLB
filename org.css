@@ -1,0 +1,213 @@
+/* Based on https://gongzhitaao.org/orgcss/ */
+body{
+  color:#272828;
+  width:95%;
+  margin:2% auto;
+  font-size:1.1em;
+  line-height:1.4em;
+  font-family:serif;
+}
+
+h1{
+  font-size:2.2em
+}
+h2{
+  font-size:1.5em
+}
+h3{
+  font-size:1.3em
+}
+h1,h2,h3{
+  line-height:1.4em
+}
+h4,h5,h6{
+  font-size:1.1em
+}
+a{
+  color:inherit;
+  background-color:inherit;
+  font:inherit;
+  text-decoration:inherit
+}
+a:hover{
+  text-decoration:underline
+}
+p{
+  margin:1em auto
+}
+dl,ol,ul{
+  margin:0 auto
+}
+.title{
+  margin:.8em auto;
+  font-weight:normal;
+}
+.subtitle,.title{
+  text-align:center
+}
+.subtitle{
+  font-size:1.1em;
+  line-height:1.4;
+  font-weight:bold;
+  margin:1em auto
+}
+#text-table-of-contents ul{
+  list-style:none;
+}
+#footnotes{
+  font-size:90%
+}
+.footpara{
+  display:inline;
+  margin:.2em auto
+}
+.footdef{
+  margin-bottom:1em
+}
+.footdef sup{
+  padding-right:.5em
+}
+a{
+  text-decoration:underline
+}
+a:hover{
+  color:black;
+  text-decoration:underline
+}
+figure{
+  padding:0;
+  margin:1em auto;
+  text-align:center
+}
+img{
+  max-width:100%;
+  vertical-align:middle
+}
+.MathJax_Display{
+  margin:0!important;
+  width:90%!important
+}
+h1,h2,h3,h4,h5,h6{
+  color:#272828;
+  line-height:1em;
+  font-family:sans-serif
+}
+h1,h2,h3{
+  line-height:1.4em
+}
+h4,h5,h6{
+  font-size:1em
+}
+dt{
+  font-weight:700
+}
+table{
+  margin:1em auto;
+  border-top:.1em solid;
+  border-collapse:collapse
+}
+table,thead{
+  border-bottom:.1em solid
+}
+table td+td,table th+th{
+  border-left:.1em solid grey
+}
+table tr{
+  border-top:.1em solid #d3d3d3
+}
+td,th{
+  padding:.3em .6em;
+  vertical-align:middle
+}
+caption.t-above{
+  caption-side:top
+}
+caption.t-bottom{
+  caption-side:bottom
+}
+caption{
+  margin-bottom:.3em
+}
+figcaption{
+  margin-top:.3em
+}
+th.org-center,th.org-left,th.org-right{
+  text-align:center
+}
+td.org-right{
+  text-align:right
+}
+td.org-left{
+  text-align:left
+}
+td.org-center{
+  text-align:center
+}
+blockquote{
+  margin:1em 2em;
+  padding-left:1em;
+  border-left:.3em solid #ccc
+}
+kbd{
+  background-color:#f7f7f7;
+  font-size:80%;
+  margin:0 .1em;
+  padding:.1em .6em
+}
+#postamble p,#preamble p{
+  font-size:90%;
+  margin:.2em
+}
+.org-src-container{
+  font-family:monospace;
+  font-size:80%;
+  padding:.1em 0em;
+  position:relative;
+}
+.org-src-container>pre{
+  font-family:monospace;
+  overflow:hidden;
+  color:#F2F2F2;
+  background-color:#161616;
+  border-radius:1em;
+  margin:0;
+  border:none;
+  padding:1em;
+}
+pre.src {
+  white-space:pre-wrap;
+}
+pre.example {
+  font-size:80%;
+  padding:1em;
+  border:.1em solid #161616;    
+  border-radius:1em;
+  font-family:monospace;
+  overflow:hidden;
+  white-space:pre-wrap;
+}
+#org-div-home-and-up{
+  font-size:70%;
+  text-align:right;
+  white-space:nowrap
+}
+#bibliography{
+  font-size:90%
+}
+#bibliography table{
+  width:100%
+}
+.todo {
+  font-family:monospace;
+  font-weight:bold;
+  padding:.2em;
+  line-height:1;
+  border-radius:.2em;
+  background:#161616;
+  color:#D80F32;
+}
+@media screen and (min-width:910px){
+  body{
+    width:900px
+  }
+}
