@@ -57,7 +57,6 @@ let
     in [
       "-DIMGUI_DIR=${imgui_src}"
       "-DBUILD_SHARED_LIBS=ON"
-      "-DIMGUI_SFML_BUILD_EXAMPLES=ON"
     ];
   };
 
@@ -76,7 +75,6 @@ in pkgs.stdenv.mkDerivation rec {
       sympy
       numpy
       Mako
-      matplotlib
       scipy
     ]);
 

@@ -55,7 +55,7 @@ if lattice in descriptor:
 #+RESULTS: eval-using-descriptor
 
 * Introduction
-Approaches to modelling fluid dynamics can be coarsely grouped into three categories: Microscopic, Mesoscopic and Macroscopic models.
+Approaches to modeling fluid dynamics can be coarsely grouped into three categories: Microscopic, Mesoscopic and Macroscopic models.
 Microscopic models describe the behavior of the individual /particles/ of whose the macroscopic fluid movement is an emergent property.
 On the other side of the spectrum, macroscopic models consider only the large scale properties of a fluid such as its velocity and density
 fields. One could say that microscopic particle models are closest to what actually happens in nature and macroscopic models in the form
@@ -66,7 +66,7 @@ Mesoscopic models sit between these two extremes and consider neither individual
 the probability of some amount of particles moving with some velocity into a certain direction at various points in time and space. The
 mathematical field of /kinetic theory/ provides a foundation for linking all of these three models.
 
-** Kinetic theory
+** Kinetic Theory
 One can use kinetic theory to get from a microscropic or /molecular/ system governed by e.g. Newton's laws of motion to macroscopic
 descriptions of certain properties of such a system. For example one can reach the diffusion equation for /billiard systems/ of particles
 colliding with solid obstacles or to the Navier Stokes equations for systems of pairwise colliding particles.
@@ -114,7 +114,7 @@ $$f_i^\text{eq}(x,t) := \omega_i \rho \left( 1 + \frac{u \cdot \xi_i}{c_s^2} + \
 using lattice-dependent weights $\omega_i$ and speed of sound $c_s$. Note that this is just one possible discretization of the Boltzmann
 equation -- nothing stops us from using different sets of velocities, relaxation times, collision operators and so on.
 Changing these things is how different physics are modeled in LBM. e.g. what we will do in the section on
-[[*Smagorinsky BGK collision][Smagorinsky turbulence modelling]] is to locally change the relaxation time.
+[[*Smagorinsky BGK Collision][Smagorinsky turbulence modelling]] is to locally change the relaxation time.
 
 To summarize what we are going to do for the simplest bulk fluid case: First calculate the current density and velocity
 moments of a cell, then compute the matching equilibrium distributions and finally perform the local BGK collision to
@@ -125,6 +125,36 @@ Special care has to be taken for the boundary conditions at the lattice frontier
 Such boundary conditions are one of the major topics of LBM research with a very rich toolbox of specialized collision
 steps for modeling e.g. inflow, outflow, solid or moving walls of various kinds.
 
+** Literate Programming
+The present website is the documentation /woven/ from the literate program file [[https://literatelb.org/tangle/lbm.org][=lbm.org=]].
+In the same fashion this program file may also be /tangled/ into compilable code.
+Programs written using this paradigm are commonly referred to as /literate/ and promise
+to decouple program exposition from the strict confines of machine-targeted languages.
+
+LiterateLB utilizes the literate programming framework offered by [[https://emacs.org][Emacs's]] [[https://orgmode.org][Org Mode]].
+
+The easiest way to tangle and compile the project is to use the [[https::/nixos.org][Nix package manager]].
+On CUDA-enabled NixOS hosts the following commands are all that is needed to tangle, compile and run one of the simulation examples:
+
+#+BEGIN_SRC sh :eval no
+git clone https://code.kummerlaender.eu/LiterateLB
+cd LiterateLB
+nix build
+./result/nozzle
+#+END_SRC
+
+On other systems the dependencies
++ Emacs 28 (earlier possible for up-to-date orgmode)
++ CMake 3.10 or later
++ Nvidia CUDA 10.2 or later
++ SFML 2.5 or later and ImGui-SFML
++ Python with SymPy, NumPy, SciPy and Mako
+will have to be provided manually. Note that the current tangle output is included so strictly speaking compiling and testing
+the examples requires neither Emacs nor Python.
+
+Note that I started developing this as a beginner in both Emacs and Org mode so some aspects of this document
+may be more clunky than necessary. Most of the complexity stems from maintaining a Python session for the
+generation of optimized GPU kernel functions using the SymPy CAS:
 * Lattice
 The cartesian grids used for the spatial discretization are commonly described as =DXQY= lattices where =X= is the number of spatial dimensions
 and =Y= is the number of discrete velocities $\xi_i$. e.g. a  =D2Q9= lattice is two dimensional and stores nine population values per cell. Each population has
@@ -201,7 +231,7 @@ print(f"Loaded D{descriptor[lattice].d}Q{descriptor[lattice].q} lattice with a w
 | ( 1, 0,-1) | 1/36   |
 | ( 0,-1,-1) | 1/36   |
 
-* Collision steps
+* Collision Steps
 While the streaming step of the LBM algorithm only propagates the populations between cells in an unform fashion,
 the collision step determines the actual values those populations take. This means that the physical behaviour
 modelled by a given LBM algorithm is determined primarily by the collision step.
@@ -566,7 +596,7 @@ __device__ static void apply(descriptor::D3Q19, S f_curr[19], S f_next[19], std:
 };
 #+END_SRC
 
-** BGK collision
+** BGK Collision
 The BGK collision operators takes a current population $f^{curr}_i$ and /relaxes/ it toward the equilibrium distribution
 $f^{eq}_i$ with some rate $\tau$. The result of this process is the new population $f^{next}_i$.
 
@@ -672,7 +702,7 @@ __device__ static void apply(descriptor::D3Q19, S f_curr[19], S f_next[19], std:
 #include "kernel/collide.h"
 #+END_SRC
 
-** Smagorinsky BGK collision
+** Smagorinsky BGK Collision
 Simulation of turbulent flow using plain BGK collisions is possible -- after all turbulence is captured by the Navier-Stokes
 equations that in turn are the target equations of our BGK-LB method -- but requires very highly resolved grids. The reason
 for this is that turbulence is characterized by the formation of eddies at both very big and very small scales. Most of the
@@ -829,7 +859,7 @@ In practice we commonly want to do both: Prescribe some inflow and outflow condi
 that represent some obstacle geometry. This way we could for example create a virtual wind tunnel where fluid enters
 the domain on one side, is kept in line by smooth free slip walls, encounters some obstacle whose aerodynamic
 properties we want to investigate and exits the simulation lattice on the other side.
-** Bounce back
+** Bounce Back
 To fit bounce back's reputation as the simplest LBM boundary condition we do not require any
 fancy expression trickery to generate its code. This boundary condition simply reflects back
 all populations the way they came from. As such it models a solid wall with no tangential velocity
@@ -884,10 +914,10 @@ __device__ static void apply(descriptor::D3Q19, S f_curr[19], S f_next[19], std:
 #include "kernel/bounce_back.h"
 #+END_SRC
 
-** Moving wall bounce back
+** Moving Wall Bounce Back
 Modeling solid unmoving obstacles using e.g. bounce back is nice enough but in practice
 we commonly want to induce some kind of movement in our fluids. While this can be done
-by e.g. prescribing an inflow velocity using [[*Prescribed equilibrium][prescribed equilibrium boundaries]], bounce
+by e.g. prescribing an inflow velocity using [[*Prescribed Equilibrium][prescribed equilibrium boundaries]], bounce
 back can be modified to represent not just a solid wall but also some momentum exerted
 on the fluid.
 
@@ -925,7 +955,7 @@ printcode(CodeBlock(*moving_wall_bounce_back(D, IndexedBase('f_curr', D.q))))
 : f_next[8] = T{0.166666666666667}*u_0 + T{0.166666666666667}*u_1 + f_curr[0];
 
 Strictly speaking this should only be used to model tangentially moving walls (such as in the 
-[[*Lid driven cavity][lid driven cavity]] example). More complex situations are possible but require boundary
+[[*Lid-driven Cavity][lid-driven cavity]] example). More complex situations are possible but require boundary
 conditions to e.g. track the position of obstacles during the simulation.
 
 #+BEGIN_SRC cpp :tangle tangle/LLBM/kernel/bounce_back_moving_wall.h
@@ -953,7 +983,7 @@ __device__ static void apply(descriptor::D3Q19, S f_curr[19], S f_next[19], std:
 #include "kernel/bounce_back_moving_wall.h"
 #+END_SRC
 
-** Free slip boundary
+** Free Slip Boundary
 This is another special case of the bounce back boundaries where populations are reflected
 specularly with respect to a given normal vector instead of simply bouncing them back
 the way they came from.
@@ -1030,7 +1060,7 @@ __device__ static void apply(descriptor::D3Q19, S f_curr[19], S f_next[19], std:
 #include "kernel/free_slip.h"
 #+END_SRC
 
-** Interpolated bounce back
+** Interpolated Bounce Back
 #+BEGIN_SRC cpp :tangle tangle/LLBM/kernel/bouzidi.h
 #pragma once
 #include <LLBM/call_tag.h>
@@ -1099,7 +1129,7 @@ struct BouzidiConfig {
 #include "kernel/bouzidi.h"
 #+END_SRC
 
-** Prescribed equilibrium
+** Prescribed Equilibrium
 One way of modeling an open boundary of our simulation domain is to prescribe either the velocity or the density at the wall cell.
 To realize this prescription we have to set the missing populations accordingly. The simplest way to that is to set all populations
 of the wall cell to the equilibrium values given by velocity and density.
@@ -1345,7 +1375,7 @@ __device__ static void apply(descriptor::D3Q19, S f_curr[19], S f_next[19], std:
 #include "kernel/equilibrium_density_wall.h"
 #+END_SRC
 
-* Propagation pattern
+* Propagation Pattern
 Up until now the symbolic expressions and the generated code did not explicitly implement the
 second essential part of the LBM algorithm: propagation. Rather the propagation was modelled
 abstractly by reading from some population =f_curr= and writing to another population =f_next=.
@@ -1602,7 +1632,7 @@ the array.
 }
 #+END_SRC
 
-* Geometry modelling
+* Geometry Modeling
 One straight forward way to define arbitrarily complex geometries that are amenable to both
 boundary parametrization and usage in just-in-time visualization are /signed distance functions/.
 
@@ -1741,7 +1771,7 @@ __device__ __host__ float sintersect(float a, float b, float k) {
 #+END_SRC
 
 ** Boundary conditions
-We can now use the distance finding algorithm to provide a convenient interface for generating [[*Interpolated bounce back][interpolated bounce back]]
+We can now use the distance finding algorithm to provide a convenient interface for generating [[*Interpolated Bounce Back][interpolated bounce back]]
 boundary parameters to fit a given SDF. This way we ensure that any displayed geometry actually fits what we simulate.
 
 The /bogus distance/ warnings are generated when the cell's position is exactly on top of the boundary 
@@ -1869,7 +1899,7 @@ SignedDistanceBoundary(Lattice<DESCRIPTOR,T,S>&, CellMaterials<DESCRIPTOR>&, SDF
 #include "sdf_boundary.h"
 #+END_SRC
 
-* Runtime context
+* Runtime Context
 ** Memory
 #+BEGIN_SRC cpp :tangle tangle/LLBM/memory.h
 #pragma once
@@ -2074,7 +2104,7 @@ cudaSurfaceObject_t bindTextureToCuda(sf::Texture& texture) {
 }
 #+END_SRC
 
-** Descriptor structure
+** Descriptor Structure
 Not all parts of our simulation code can be statically resolved during the tangling of this file. e.g. we might want to iterate
 over all population IDs or calculate opposite indices at runtime. For this purpose we gather some data from our Python
 descriptor structure into a C++ header.
@@ -2510,7 +2540,7 @@ void stream() {
 }
 #+END_SRC
 
-** Operator application wrappers
+** Operator Application
 All of our kernel functions can be grouped into three categories: Kernels that are applied to cell IDs, kernels that are applied
 to entries of a list and kernels that are applied to a mask in a spatial configuration. As we are going to employ C++ tag dispatching
 for selecting the appropriate wrapper functions to call the kernel operators we define a set of structs to distinguish the overloads:
@@ -2725,7 +2755,7 @@ template <typename OPERATOR, typename... ARGS>
 Operator(OPERATOR, DeviceBuffer<bool>&, ARGS... args) -> Operator<OPERATOR,std::remove_reference_t<ARGS>...>;
 #+END_SRC
 
-** Kernel execution
+** Kernel Execution
 #+BEGIN_SRC cpp :tangle tangle/LLBM/kernel/executor.h
 #pragma once
 
@@ -2930,7 +2960,7 @@ for both simulation and visualization on the GPU.
 }
 #+END_SRC
 
-** Cell list generation
+** Cell List Generation
 Each call to e.g. our collision kernel operates on a subset of cells represented by their IDs.
 To ensure that these subsets are disjoint and that we do not perform e.g. both a bulk
 collision and some boundary handling on the same cell we maintain a map of material
@@ -3090,7 +3120,7 @@ void for_links(int bulk, int solid, F f) {
 #+END_SRC
 
 * Visualization
-** Color palettes
+** Color Palettes
 Developing and selecting color plattes is a quite involved topic and a good color palette is essential for visually pleasing results.
 Furthermore careful choice of colors can expose details in the fluid structure that are otherwise easy to overlook, e.g. an outlier palette
 allows the visualization to focus on the variations in the upper end of the sampled values.
@@ -3270,7 +3300,7 @@ void ColorPalette::interact() {
 }
 #+END_SRC
 
-** Velocity norm
+** Velocity Norm
 #+BEGIN_SRC cpp :tangle tangle/LLBM/kernel/collect_velocity_norm.h
 #pragma once
 #include <LLBM/call_tag.h>
@@ -4023,8 +4053,8 @@ template <typename DESCRIPTOR, typename T, typename S, typename SDF>
 QCriterionS(Lattice<DESCRIPTOR,T,S>&, DeviceBuffer<bool>&, SDF) -> QCriterionS<DESCRIPTOR,T,S,SDF>;
 #+END_SRC
 
-** Volumetric rendering
-*** Intersection primitives
+** Volumetric Rendering
+*** Intersection Primitives
 In order to quickly check whether a given ray intersects our embedded simulation domain we implement a common
 function for checking intersections with /axis-aligned bounding boxes/. Requiring the box to be axis-aligned greatly
 simplifies and speeds up the problem.
@@ -4047,7 +4077,7 @@ __device__ bool aabb(float3 origin, float3 dir, descriptor::CuboidD<3>& cuboid, 
 }
 #+END_SRC
 
-*** Pinhole camera
+*** Pinhole Camera
 #+NAME: raycast-pinhole-camera
 #+BEGIN_SRC cpp
 __device__ float2 getNormalizedScreenPos(float w, float h, float x, float y) {
@@ -4066,7 +4096,7 @@ __device__ float3 getEyeRayDir(float2 screen_pos, float3 eye_pos, float3 eye_tar
 }
 #+END_SRC
 
-*** Image synthesis
+*** Image Synthesis
 Let $C$ be the color along a ray $r$ with length $L$ and given an absorption $\mu$. Then the volume rendering equation
 to determine said color $C$ looks as follows:
 
@@ -4219,7 +4249,7 @@ __global__ void raymarch(
 }
 #+END_SRC
 
-*** Surface shading
+*** Surface Shading
 Basic shading of the SDF-described obstacles requires us to calculate surface normals for arbitrary interesection points.
 
 Local normals are easily reconstructed from a signed distance function by sampling their neighborhood. We do not even
@@ -4448,7 +4478,7 @@ print(', '.join([ str(pdf(x).evalf()) for x in range(-3,4) ]))
 #+RESULTS: gauss-blur-filter
 : 0.00443184841193801, 0.0539909665131881, 0.241970724519143, 0.398942280401433, 0.241970724519143, 0.0539909665131881, 0.00443184841193801
 
-*** Camera controller
+*** Camera Controller
 A convenient way of interactively controlling the view that is provided by a pinhole camera is to implement an /Arcball/ camera.
 i.e. a camera that can be rotated around a central target point using the mouse.
 
@@ -4570,6 +4600,7 @@ public:
 
 <<arcball-camera>>
 #+END_SRC
+
 *** Samplers
 #+BEGIN_SRC cpp :tangle tangle/sampler/sampler.h
 #pragma once
@@ -4660,7 +4691,7 @@ if (ImGui::BeginCombo("Source", _current->getName().c_str())) {
   ImGui::EndCombo();
 }
 _current->interact();
-ImGui::SliderInt("Timestep/s", &_steps_per_second, 1, 2000);
+ImGui::SliderInt("Timestep/s", &_steps_per_second, 1, 1500);
 ImGui::SliderInt("Samples/s", &_samples_per_second, 1, 60);
 if (simulate) {
   simulate = !ImGui::Button("Pause");
@@ -4905,8 +4936,8 @@ class on top of the =RenderWindow=.
 #include "util/colormap.h"
 #+END_SRC
 
-** Lid driven cavity
-The lid driven cavity is a very common example in the LBM community due to its simple setup while
+** Lid-driven Cavity
+The lid-driven cavity is a very common example in the LBM community due to its simple setup while
 providing quite complex dynamics and extensive reference results in literature. Its geometry consists
 of a plain square box with solid walls and a lid moving at a constant velocity. This lid movement then
 induces a characteristic vortex structure inside the box.
@@ -5276,7 +5307,7 @@ while (window.isOpen()) {
 }
 #+END_SRC
 
-** Flow around a sphere
+** Flow around a Sphere
 This example models a channel flow around a spherical obstacle.
 
 #+BEGIN_SRC cpp :tangle tangle/channel-with-sphere.cu
@@ -5297,7 +5328,7 @@ cudaSetDevice(0);
 After including the relevant headers we construct the D3Q19 lattice.
 
 #+BEGIN_SRC cpp :tangle tangle/channel-with-sphere.cu
-const descriptor::Cuboid<DESCRIPTOR> cuboid(300, 80, 80);
+const descriptor::Cuboid<DESCRIPTOR> cuboid(448, 64, 64);
 Lattice<DESCRIPTOR,T> lattice(cuboid);
 #+END_SRC
 
@@ -5372,7 +5403,7 @@ represented with interpolated bounce back.
 #+NAME: channel-with-sphere-simulation-step
 #+BEGIN_SRC cpp :eval no
 const float tau = 0.51;
-const float inflow = 0.08;
+const float inflow = 0.05;
 
 lattice.apply(Operator(BgkCollideO(), bulk_mask, tau),
               Operator(BounceBackFreeSlipO(), wall_mask_z, WallNormal<0,0,1>()),
@@ -5535,7 +5566,7 @@ cudaSetDevice(0);
 After including the relevant headers we construct the D3Q19 lattice.
 
 #+BEGIN_SRC cpp :tangle tangle/nozzle.cu
-const descriptor::Cuboid<DESCRIPTOR> cuboid(448, 64, 64);
+const descriptor::Cuboid<DESCRIPTOR> cuboid(400, 80, 80);
 Lattice<DESCRIPTOR,T> lattice(cuboid);
 #+END_SRC
 
@@ -5621,7 +5652,7 @@ renderer.run([&](std::size_t iStep) {
 #+END_SRC
 
 * Benchmark
-** Performance measurement
+** Performance Measurement
 #+BEGIN_SRC cpp :tangle tangle/util/timer.h
 #pragma once
 #include <chrono>
@@ -5657,7 +5688,7 @@ double mlups(std::size_t nCells, std::size_t nSteps, std::chrono::time_point<std
 }
 #+END_SRC
 
-** Lid driven cavity
+** Lid-driven Cavity
 #+BEGIN_SRC cpp :tangle tangle/benchmark-ldc.cu
 #include <LLBM/base.h>
 

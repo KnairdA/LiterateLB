@@ -17,7 +17,7 @@ using DESCRIPTOR = descriptor::D3Q19;
 int main() {
 cudaSetDevice(0);
 
-const descriptor::Cuboid<DESCRIPTOR> cuboid(300, 80, 80);
+const descriptor::Cuboid<DESCRIPTOR> cuboid(448, 64, 64);
 Lattice<DESCRIPTOR,T> lattice(cuboid);
 
 CellMaterials<DESCRIPTOR> materials(cuboid, [&cuboid](uint3 p) -> int {
@@ -70,7 +70,7 @@ renderer.add<CurlNormS>(lattice, bulk_mask, obstacle);
 renderer.add<VelocityNormS>(lattice, bulk_mask, obstacle);
 renderer.run([&](std::size_t iStep) {
   const float tau = 0.51;
-  const float inflow = 0.08;
+  const float inflow = 0.05;
   
   lattice.apply(Operator(BgkCollideO(), bulk_mask, tau),
                 Operator(BounceBackFreeSlipO(), wall_mask_z, WallNormal<0,0,1>()),

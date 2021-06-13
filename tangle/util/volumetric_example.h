@@ -75,7 +75,7 @@ void run(TIMESTEP step) {
           ImGui::EndCombo();
         }
         _current->interact();
-        ImGui::SliderInt("Timestep/s", &_steps_per_second, 1, 2000);
+        ImGui::SliderInt("Timestep/s", &_steps_per_second, 1, 1500);
         ImGui::SliderInt("Samples/s", &_samples_per_second, 1, 60);
         if (simulate) {
           simulate = !ImGui::Button("Pause");
