@@ -713,7 +713,7 @@ One comparably simple model for respresenting the smaller eddies in such a LES i
 This model yields a expression for computing the /effective relaxation rate/ $\tau_\text{eff}$ on a per-cell basis given the global relaxation
 time $\tau$ and a Smagorinsky constant. As the relaxation time in BGK LBM is a function of the viscosity this translates into
 computing the effective viscosity using a local strain-rate tensor reconstruction based on the non-equilibrium part of each
-cell's populations.
+cell's populations. This follows the approach laid out by  Yu et al. in cite:yuDNSDecayingIsotropic2005.
 
 #+BEGIN_SRC python :session :results none
 tau, smagorinsky = symbols('tau, smagorinsky')
@@ -1068,8 +1068,10 @@ __device__ static void apply(descriptor::D3Q19, S f_curr[19], S f_next[19], std:
 <<bouzidi-config>>
 #+END_SRC
 
-Given a precomputed distance factor =q= we can compute an interpolated bounce back
-boundary.
+Following the approach by Bouzidi et al. cite:bouzidiMomentumTransferBoltzmannlattice2001
+an improved version of plain bounce back can be formulated using the distance between cell and wall.
+This /interpolated/ bounce back condition reconstructs the missing populations using a basic linear
+interpolation w.r.t. a precomputed wall distance factor $q$.
 
 $$\begin{align*}
 f_i(x_f,t+\delta t) &= 2q f_j(x_f,t) + (1-2q) f_j(x_{f} + \delta x \xi_i,t)  && q \leq \frac{1}{2} \\
@@ -5844,6 +5846,8 @@ done
 | 4 | 240 | 1000 | 2561.12 |
 | 4 | 256 | 1000 | 2511.97 |
 
+* References
+#+BIBLIOGRAPHY: sources acm option:-dl option:-nobibsource
 * Open tasks
 :properties:
 :unnumbered: notoc

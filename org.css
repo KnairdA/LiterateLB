@@ -99,7 +99,8 @@ h4,h5,h6{
   font-size:1em
 }
 dt{
-  font-weight:700
+  font-weight:bold;
+  float:left
 }
 table{
   margin:1em auto;
@@ -191,11 +192,8 @@ pre.example {
   text-align:right;
   white-space:nowrap
 }
-#bibliography{
-  font-size:90%
-}
-#bibliography table{
-  width:100%
+#bibliography h2{
+  display:none;
 }
 .todo {
   font-family:monospace;
