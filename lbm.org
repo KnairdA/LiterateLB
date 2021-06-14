@@ -1,14 +1,13 @@
 #+TITLE: A literate Lattice Boltzmann Code
 #+SUBTITLE: [[https://kummerlaender.eu][Adrian Kummerländer]]
 #+STARTUP: latexpreview
-#+HTML_DOCTYPE: html5
 #+OPTIONS: toc:nil html-postamble:nil html5-fancy:t html-style:nil
 #+PROPERTY: header-args :exports both :mkdirp yes :noweb no-export :eval no-export
 #+PROPERTY: header-args:python+ :var lattice="D2Q9"
 #+PROPERTY: header-args:cpp+ :main no :eval no
-#+HTML_MATHJAX: path:"https://static.kummerlaender.eu/mathjax/MathJax.js?config=TeX-AMS_HTML"
-
+#+HTML_DOCTYPE: html5
 #+HTML_HEAD: <link rel="stylesheet" type="text/css" href="org.css"/>
+#+HTML_MATHJAX: path:"https://static.kummerlaender.eu/mathjax/MathJax.js?config=TeX-AMS_HTML"
 
 #+BEGIN_ABSTRACT
 This file describes a full Lattice Boltzmann code featuring both 2D and 3D lattices, a workable selection of boundary conditions, Smagorinsky
@@ -126,7 +125,7 @@ Such boundary conditions are one of the major topics of LBM research with a very
 steps for modeling e.g. inflow, outflow, solid or moving walls of various kinds.
 
 ** Literate Programming
-The present website is the documentation /woven/ from the literate program file [[https://literatelb.org/tangle/lbm.org][=lbm.org=]].
+The present website is the documentation /woven/ from the literate program file [[https://code.kummerlaender.eu/LiterateLB/tree/lbm.org][=lbm.org=]].
 In the same fashion this program file may also be /tangled/ into compilable code.
 Programs written using this paradigm are commonly referred to as /literate/ and promise
 to decouple program exposition from the strict confines of machine-targeted languages.
@@ -140,7 +139,7 @@ On CUDA-enabled NixOS hosts the following commands are all that is needed to tan
 git clone https://code.kummerlaender.eu/LiterateLB
 cd LiterateLB
 nix build
-./result/nozzle
+./result/bin/nozzle
 #+END_SRC
 
 On other systems the dependencies
