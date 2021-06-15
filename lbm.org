@@ -124,6 +124,9 @@ Special care has to be taken for the boundary conditions at the lattice frontier
 Such boundary conditions are one of the major topics of LBM research with a very rich toolbox of specialized collision
 steps for modeling e.g. inflow, outflow, solid or moving walls of various kinds.
 
+As a starting point for further reading on LBM I can recommend the de facto standard text
+cite:krugerLatticeBoltzmannMethod2017  by Krüger et al.
+
 ** Literate Programming
 The present website is the documentation /woven/ from the literate program file [[https://code.kummerlaender.eu/LiterateLB/tree/lbm.org][=lbm.org=]].
 In the same fashion this program file may also be /tangled/ into compilable code.
@@ -1394,9 +1397,9 @@ to access it.
 #include <cuda.h>
 #+END_SRC
 
-Our code employs the /Periodic Shift (PS)/ propagation pattern to perform the streaming step of
-the LB algorithm. This pattern uses a /Structure of Arrays/ data layout for the populations where
-each individual array is viewed as cyclic. The Sweep space filling curve is used as the bijection
+Our code employs the /Periodic Shift (PS)/ cite:kummerlanderImplicitPropagationDirectly2021 propagation
+pattern to perform the streaming step of the LB algorithm. This pattern uses a /Structure of Arrays/ data layout for the
+populations where each individual array is viewed as cyclic. The Sweep space filling curve is used as the bijection
 between these one dimensional arrays and spatial cell locations. 
 As the distance between any two cells along some fixed vector is invariant of the specific cell
 locations propagation is equivalent to rotating the population arrays. Such rotation can be
@@ -3662,6 +3665,10 @@ In this section we want to try to reproduce such a view by shading the sample va
 layer normal vector.
 
 *** Calculate shear layer normal
+Translating the approach of Barth and Burns cite:barthVirtualRheoscopicFluids2007 into LBM
+we can compute the shear layer normal from the strain rate tensor that in turn can be recovered from a
+cells non-equilibrium population.
+
 #+BEGIN_SRC python :session :results none
 n = IndexedBase('n', d)
 
@@ -5847,7 +5854,7 @@ done
 | 4 | 256 | 1000 | 2511.97 |
 
 * References
-#+BIBLIOGRAPHY: sources acm option:-dl option:-nobibsource
+#+BIBLIOGRAPHY: sources acm option:-dl option:-nobibsource option:-u
 * Open tasks
 :properties:
 :unnumbered: notoc
