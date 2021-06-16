@@ -5574,7 +5574,7 @@ cudaSetDevice(0);
 After including the relevant headers we construct the D3Q19 lattice.
 
 #+BEGIN_SRC cpp :tangle tangle/nozzle.cu
-const descriptor::Cuboid<DESCRIPTOR> cuboid(400, 80, 80);
+const descriptor::Cuboid<DESCRIPTOR> cuboid(500, 80, 80);
 Lattice<DESCRIPTOR,T> lattice(cuboid);
 #+END_SRC
 
