@@ -24,7 +24,7 @@ int _samples_per_second = 30;
 public:
 VolumetricExample(descriptor::CuboidD<3> cuboid):
   RenderWindow("LiterateLB"),
-  _camera(make_float3(cuboid.nX/2,cuboid.nY/2,cuboid.nZ/2), cuboid.nX, M_PI/2, M_PI/2),
+  _camera(make_float3(cuboid.nX/2,cuboid.nY/2,cuboid.nZ/2), cuboid.nX),
   _config(cuboid),
   _palette(_config.palette),
   _noise(_config.noise)
@@ -103,8 +103,10 @@ void run(TIMESTEP step) {
       },
       [&](sf::Event& event) {
         _camera.handle(event);
-        _config.eye_pos = _camera.getEyePosition();
-        _config.eye_dir = _camera.getDirection();
+        _config.camera_position = _camera.getPosition();
+        _config.camera_forward = _camera.getForward();
+        _config.camera_right = _camera.getRight();
+        _config.camera_up = _camera.getUp();
         _config.canvas_size = make_uint2(this->getRenderView().width, this->getRenderView().height);
       }
     );

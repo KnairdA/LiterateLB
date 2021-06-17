@@ -1,23 +1,28 @@
 #include <cuda-samples/Common/helper_math.h>
 #include "SFML/Window/Event.hpp"
 
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <glm/common.hpp>
+
 class Camera {
 private:
-  float _distance;
-  float _phi;
-  float _psi;
+  glm::quat _rotation;
+  glm::mat3 _matrix;
   float3 _target;
-  float3 _eye;
-  float3 _direction;
+  float3 _position;
+  float3 _forward;
+  float3 _right;
+  float3 _up;
+  float _distance;
   bool _dragging;
   bool _moving;
   float2 _lastMouse;
 
 public:
-  Camera(float3 target, float distance, float phi, float psi):
+  Camera(float3 target, float distance):
     _distance(distance),
-    _phi(phi),
-    _psi(psi),
     _target(target),
     _dragging(false),
     _moving(false) {
@@ -25,8 +30,14 @@ public:
   }
 
   void update() {
-    _eye = _target + make_float3(_distance*sin(_psi)*cos(_phi), _distance*sin(_psi)*sin(_phi), _distance*cos(_psi));
-    _direction = normalize(_target - _eye);
+    glm::vec3 position = _matrix * glm::vec3(0, _distance, 0);
+    _position = _target + make_float3(position[0], position[1], position[2]);
+    _forward = normalize(_target - _position);
+    
+    glm::vec3 right = _matrix * glm::vec4(-1, 0, 0, 0);
+    _right = make_float3(right[0], right[1], right[2]);
+    glm::vec3 up = _matrix * glm::vec4(glm::cross(glm::vec3(0, 1, 0), glm::vec3(-1, 0, 0)), 0);
+    _up = make_float3(up[0], up[1], up[2]);
   }
 
   void handle(sf::Event& event) {
@@ -55,32 +66,33 @@ public:
         float2 mouse = make_float2(event.mouseMove.x, event.mouseMove.y);
         float2 delta = mouse - _lastMouse;
         _lastMouse = mouse;
-        _phi += 0.4*delta.x * 2*M_PI/360;
-        if (delta.y > 0 && _psi <= M_PI-2*M_PI/60) {
-          _psi += 0.4*delta.y * M_PI/180;
-        } else if (delta.y < 0 && _psi >= 2*M_PI/60) {
-          _psi += 0.4*delta.y * M_PI/180;
-        }
+    
+        glm::quat rotation_z = glm::conjugate(_rotation) * glm::vec3(0,0,0.01*delta.x);
+        glm::quat rotation_x = glm::conjugate(_rotation) * glm::vec3(0.01*delta.y,0,0);
+    
+        _matrix = _matrix * glm::mat3_cast(_rotation * glm::cross(rotation_x, rotation_z));
       }
       if (_moving) {
         float2 mouse = make_float2(event.mouseMove.x, event.mouseMove.y);
         float2 delta = mouse - _lastMouse;
         _lastMouse = mouse;
-        float3 forward = normalize(_target - _eye);
-    	   float3 right   = normalize(cross(make_float3(0.f, 0.f, -1.f), forward));
-        float3 up      = cross(right, forward);
-        _target += 0.4*right*delta.x - 0.4*up*delta.y;
+        _target += 0.4*_right*delta.x + 0.4*_up*delta.y;
       }
       break;
     }
     update();
   }
 
-  float3 getDirection() const {
-    return _direction;
+  float3 getPosition() const {
+    return _position;
   }
-
-  float3 getEyePosition() const {
-    return _eye;
+  float3 getForward() const {
+    return _forward;
+  }
+  float3 getRight() const {
+    return _right;
+  }
+  float3 getUp() const {
+    return _up;
   }
 };

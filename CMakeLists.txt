@@ -4,6 +4,7 @@ project(literatelb LANGUAGES CXX CUDA)
 find_package(CUDAToolkit REQUIRED)
 find_package(SFML 2.5 COMPONENTS graphics window system REQUIRED)
 find_package(ImGui-SFML REQUIRED)
+find_package(glm REQUIRED)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
@@ -26,11 +27,12 @@ serialize_assets(${CMAKE_CURRENT_SOURCE_DIR}/tangle/asset
 add_library(assets ${CMAKE_CURRENT_BINARY_DIR}/assets.cc)
 
 link_libraries(
+  CUDA::cuda_driver
 	sfml-graphics
 	sfml-window
 	sfml-system
 	ImGui-SFML::ImGui-SFML
-  CUDA::cuda_driver
+  glm
   assets)
 
 file(GLOB EXAMPLES ${CMAKE_CURRENT_SOURCE_DIR}/tangle/*.cu)

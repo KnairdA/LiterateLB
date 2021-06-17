@@ -86,6 +86,7 @@ in pkgs.stdenv.mkDerivation rec {
     libGL
     sfml
     imgui-sfml
+    glm
   ];
 
   phases = [ "buildPhase" "installPhase" ];

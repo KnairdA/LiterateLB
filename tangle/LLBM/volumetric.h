@@ -9,11 +9,7 @@ __device__ float2 getNormalizedScreenPos(float w, float h, float x, float y) {
 	);
 }
 
-__device__ float3 getEyeRayDir(float2 screen_pos, float3 eye_pos, float3 eye_target) {
-	const float3 forward = normalize(eye_target - eye_pos);
-	const float3 right   = normalize(cross(make_float3(0.f, 0.f, -1.f), forward));
-	const float3 up      = normalize(cross(forward, right));
-
+__device__ float3 getEyeRayDir(float2 screen_pos, float3 forward, float3 right, float3 up) {
 	return normalize(screen_pos.x*right + screen_pos.y*up + 4*forward);
 }
 
@@ -43,8 +39,10 @@ struct VolumetricRenderConfig {
   float brightness = 1;
   float3 background = make_float3(22.f / 255.f);
 
-  float3 eye_pos;
-  float3 eye_dir;
+  float3 camera_position;
+  float3 camera_forward;
+  float3 camera_right;
+  float3 camera_up;
 
   cudaSurfaceObject_t canvas;
   uint2 canvas_size;
@@ -74,7 +72,7 @@ __global__ void raymarch(
   }
 
   const float2 screen_pos = getNormalizedScreenPos(config.canvas_size.x, config.canvas_size.y, x, y);
-  const float3 ray_dir = getEyeRayDir(screen_pos, config.eye_pos, config.eye_pos + config.eye_dir);
+  const float3 ray_dir = getEyeRayDir(screen_pos, config.camera_forward, config.camera_right, config.camera_up);
 
   float3 r = make_float3(0);
   float  a = 0;
@@ -82,13 +80,13 @@ __global__ void raymarch(
   float tmin = 0;
   float tmax = 4000;
   
-  if (aabb(config.eye_pos, ray_dir, config.cuboid, tmin, tmax)) {
+  if (aabb(config.camera_position, ray_dir, config.cuboid, tmin, tmax)) {
     float volume_dist = tmax - tmin;
-    float3 geometry_pos = config.eye_pos + tmin*ray_dir;
+    float3 geometry_pos = config.camera_position + tmin*ray_dir;
     float geometry_dist = approximateDistance(geometry, geometry_pos, ray_dir, 0, volume_dist);
     geometry_pos += geometry_dist * ray_dir;
   
-    float jitter = config.align_slices_to_view * (floor(fabs(dot(config.eye_dir, tmin*ray_dir)) / config.delta) * config.delta - tmin)
+    float jitter = config.align_slices_to_view * (floor(fabs(dot(config.camera_forward, tmin*ray_dir)) / config.delta) * config.delta - tmin)
                  + config.apply_noise          * config.delta * noiseFromTexture(config.noise, threadIdx.x, threadIdx.y);
   
     tmin          += jitter;
@@ -96,7 +94,7 @@ __global__ void raymarch(
     geometry_dist -= jitter;
   
     if (volume_dist > config.delta) {
-      float3 sample_pos = config.eye_pos + tmin * ray_dir;
+      float3 sample_pos = config.camera_position + tmin * ray_dir;
       unsigned n_samples = floor(geometry_dist / config.delta);
       for (unsigned i=0; i < n_samples; ++i) {
         sample_pos += config.delta * ray_dir;
