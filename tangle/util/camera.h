@@ -1,20 +1,15 @@
 #include <cuda-samples/Common/helper_math.h>
-#include "SFML/Window/Event.hpp"
-
-#include <glm/glm.hpp>
-#include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
-#include <glm/common.hpp>
+#include "SFML/Window/Event.hpp"
 
 class Camera {
 private:
   glm::quat _rotation;
-  glm::mat3 _matrix;
-  float3 _target;
-  float3 _position;
-  float3 _forward;
-  float3 _right;
-  float3 _up;
+  glm::vec3 _target;
+  glm::vec3 _position;
+  glm::vec3 _forward;
+  glm::vec3 _right;
+  glm::vec3 _up;
   float _distance;
   bool _dragging;
   bool _moving;
@@ -23,21 +18,17 @@ private:
 public:
   Camera(float3 target, float distance):
     _distance(distance),
-    _target(target),
+    _target(target.x, target.y, target.z),
     _dragging(false),
     _moving(false) {
     update();
   }
 
   void update() {
-    glm::vec3 position = _matrix * glm::vec3(0, _distance, 0);
-    _position = _target + make_float3(position[0], position[1], position[2]);
-    _forward = normalize(_target - _position);
-    
-    glm::vec3 right = _matrix * glm::vec4(-1, 0, 0, 0);
-    _right = make_float3(right[0], right[1], right[2]);
-    glm::vec3 up = _matrix * glm::vec4(glm::cross(glm::vec3(0, 1, 0), glm::vec3(-1, 0, 0)), 0);
-    _up = make_float3(up[0], up[1], up[2]);
+    _position = _target + glm::axis(_rotation * glm::quat(0, 0, _distance, 0) * glm::conjugate(_rotation));
+    _forward = glm::normalize(_target - _position);
+    _right = glm::axis(_rotation * glm::quat(0, -1, 0, 0) * glm::conjugate(_rotation));
+    _up = glm::axis(_rotation * glm::quat(0, glm::cross(glm::vec3(0, 1, 0), glm::vec3(-1, 0, 0))) * glm::conjugate(_rotation));
   }
 
   void handle(sf::Event& event) {
@@ -62,37 +53,33 @@ public:
       }
       break;
     case sf::Event::MouseMoved:
+      float2 mouse = make_float2(event.mouseMove.x, event.mouseMove.y);
       if (_dragging) {
-        float2 mouse = make_float2(event.mouseMove.x, event.mouseMove.y);
-        float2 delta = mouse - _lastMouse;
-        _lastMouse = mouse;
-    
-        glm::quat rotation_z = glm::conjugate(_rotation) * glm::vec3(0,0,0.01*delta.x);
-        glm::quat rotation_x = glm::conjugate(_rotation) * glm::vec3(0.01*delta.y,0,0);
-    
-        _matrix = _matrix * glm::mat3_cast(_rotation * glm::cross(rotation_x, rotation_z));
+        float2 delta = 0.005 * (mouse - _lastMouse);
+        glm::quat rotation_z = glm::vec3(0,0,delta.x);
+        glm::quat rotation_x = glm::vec3(delta.y,0,0);
+        _rotation *= glm::cross(rotation_x, rotation_z);
       }
       if (_moving) {
-        float2 mouse = make_float2(event.mouseMove.x, event.mouseMove.y);
-        float2 delta = mouse - _lastMouse;
-        _lastMouse = mouse;
-        _target += 0.4*_right*delta.x + 0.4*_up*delta.y;
+        float2 delta = 0.04 * (mouse - _lastMouse);
+        _target += _right*delta.x + _up*delta.y;
       }
+      _lastMouse = mouse;
       break;
     }
     update();
   }
 
   float3 getPosition() const {
-    return _position;
+    return make_float3(_position.x, _position.y, _position.z);
   }
   float3 getForward() const {
-    return _forward;
+    return make_float3(_forward.x, _forward.y, _forward.z);
   }
   float3 getRight() const {
-    return _right;
+    return make_float3(_right.x, _right.y, _right.z);
   }
   float3 getUp() const {
-    return _up;
+    return make_float3(_up.x, _up.y, _up.z);
   }
 };
