@@ -18,9 +18,13 @@ glm::vec3 _right;
 glm::vec3 _up;
 float _distance;
 
-float2 _lastMouse;
-bool _dragging;
+float2 _mouse;
+
+bool _rotating;
 bool _moving;
+
+bool _restricted_x;
+bool _restricted_y;
 
 void update() {
   _position = _target + apply(_rotation, glm::vec3(0, _distance, 0));
@@ -33,29 +37,43 @@ public:
 Camera(float3 target, float distance):
   _distance(distance),
   _target(target.x, target.y, target.z),
-  _dragging(false),
-  _moving(false) {
+  _rotating(false),
+  _moving(false),
+  _restricted_x(false),
+  _restricted_y(false) {
   update();
 }
 
 void handle(sf::Event& event) {
   switch (event.type) {
+  case sf::Event::KeyPressed:
+    if (event.key.code == sf::Keyboard::LShift && !_restricted_x && !_restricted_y) {
+      _restricted_x = true;
+      _restricted_y = true;
+    }
+    break;
+  case sf::Event::KeyReleased:
+    if (event.key.code == sf::Keyboard::LShift) {
+      _restricted_x = false;
+      _restricted_y = false;
+    }
+    break;
   case sf::Event::MouseButtonPressed:
     if (event.mouseButton.button == sf::Mouse::Left) {
-      _dragging = true;
-      _lastMouse = make_float2(event.mouseButton.x, event.mouseButton.y);
+      _rotating = true;
     } else if (event.mouseButton.button == sf::Mouse::Right) {
       _moving = true;
-      _lastMouse = make_float2(event.mouseButton.x, event.mouseButton.y);
     }
+    _mouse = make_float2(event.mouseButton.x, event.mouseButton.y);
     break;
-  case sf::Event::MouseButtonReleased:
-    if (event.mouseButton.button == sf::Mouse::Left) {
-      _dragging = false;
-    } else if (event.mouseButton.button == sf::Mouse::Right) {
-      _moving = false;
-    }
+  case sf::Event::MouseButtonReleased: {
+    bool restricted = _restricted_x + _restricted_y;
+    _restricted_x = restricted;
+    _restricted_y = restricted;
+    _rotating = false;
+    _moving = false;
     break;
+  }
 
   case sf::Event::MouseWheelMoved:
     _distance -= event.mouseWheel.delta * 10;
@@ -63,18 +81,27 @@ void handle(sf::Event& event) {
 
   case sf::Event::MouseMoved:
     float2 mouse = make_float2(event.mouseMove.x, event.mouseMove.y);
-    if (_dragging) {
-      float2 delta = 0.005 * (mouse - _lastMouse);
+    if (_rotating) {
+      float2 delta = 0.005 * (mouse - _mouse);
+      if (_restricted_x && _restricted_y) {
+        if (std::abs(delta.x) > std::abs(delta.y)) {
+          _restricted_y = false;
+        } else {
+          _restricted_x = false;
+        }
+      }
+      if (_restricted_x) { delta.y = 0; }
+      if (_restricted_y) { delta.x = 0; }
       glm::quat rotation_z = glm::vec3(0,0,delta.x);
       glm::quat rotation_x = glm::vec3(delta.y,0,0);
       _rotation *= glm::cross(rotation_x, rotation_z);
     }
 
     if (_moving) {
-      float2 delta = 0.04 * (mouse - _lastMouse);
+      float2 delta = 0.04 * (mouse - _mouse);
       _target += _right*delta.x + _up*delta.y;
     }
-    _lastMouse = mouse;
+    _mouse = mouse;
     break;
   }
   update();
