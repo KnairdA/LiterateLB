@@ -1019,7 +1019,7 @@ The mapping between pre- and post-collision velocities is of course specific to 
 wall normal. We use tag dispatching for allowing the use to select which kind of wall
 each boundary condition call represents.
 
-#+BEGIN_SRC cpp :eval no :main no :tangle tangle/LLBM/wall.h
+#+BEGIN_SRC cpp :tangle tangle/LLBM/wall.h
 #pragma once
 
 template <int N_0, int N_1, int N_2=0>
@@ -2336,7 +2336,7 @@ Note that we use some preprocessor trickery to get this descriptor structure wor
 
 For convenience we group all commonly required headers into a single include.
 
-#+BEGIN_SRC cpp :eval no :main no :tangle tangle/LLBM/base.h
+#+BEGIN_SRC cpp :tangle tangle/LLBM/base.h
 #pragma once
 
 #include "descriptor.h"
@@ -4214,7 +4214,7 @@ a += attenuation * sample_attenuation;
 To call this render function we now only need to wrap it in a CUDA kernel that we template for given
 sampling and color palette functions.
 
-#+BEGIN_SRC cpp :tangle tangle/LLBM/volumetric.h :eval no :main no
+#+BEGIN_SRC cpp :tangle tangle/LLBM/volumetric.h
 #include <cuda-samples/Common/helper_math.h>
 
 #include <LLBM/sdf.h>
@@ -4486,23 +4486,43 @@ print(', '.join([ str(pdf(x).evalf()) for x in range(-3,4) ]))
 : 0.00443184841193801, 0.0539909665131881, 0.241970724519143, 0.398942280401433, 0.241970724519143, 0.0539909665131881, 0.00443184841193801
 
 *** Camera Controller
+#+BEGIN_SRC cpp :tangle tangle/util/camera.h
+#pragma once
+#include <cuda-samples/Common/helper_math.h>
+#include <glm/gtx/quaternion.hpp>
+#include "SFML/Window/Event.hpp"
+#+END_SRC
+
 A convenient way of interactively controlling the view parameters of a pinhole camera is to implement
 a orbiting camera. This type of camera can be rotated around a central target point using the mouse.
 
-While translation is realized easily by adding a shift vector to the current camera position, rotation
-is more complex. We are going to accumulate all rotation operations in a single quaternion variable
-=_rotation=. Given 3D vectors $v$ are easily rotated by a quaternion $q$ using $v^\prime = q v \overline{q}$.
+While translation is realized easily by adding the same shift vector to the current camera position and
+target point, rotation is more complex. Quaternions are a common object for expressing rotations of 3D
+space in a easily combinable manner.
 
-#+NAME: camera-spherical-coordinates
-#+BEGIN_SRC cpp
+Given 3D vectors $v$ are easily rotated by a quaternion $q$ using $v^\prime = q v \overline{q}$.
+
+#+BEGIN_SRC cpp :tangle tangle/util/camera.h
+glm::vec3 apply(glm::quat q, glm::vec3 v) {
+  return glm::axis(q * glm::quat(0, v) * glm::conjugate(q));
+}
+#+END_SRC
+
+Interactive manipulations of the rotation around a point require accumulation of individual
+rotations over consecutive operations. Each single operation also results of the combination
+of multiple basic rotations. Our =Camera= class is  going to accumulate all rotations in a single
+quaternion variable =_rotation=.
+
+#+BEGIN_SRC cpp :tangle tangle/util/camera.h
+class Camera {
+private:
 glm::quat _rotation;
 #+END_SRC
 
-Using the rotation matrix we can compute the pinhole camera parameters. As they only change
-when a rotation is performed we store them in a set of variables.
+Using the rotation quaternion we can compute all pinhole camera parameters. As they only
+change when a rotation is performed we store them in a set of variables.
 
-#+NAME: camera-cartesian-coordinates
-#+BEGIN_SRC cpp
+#+BEGIN_SRC cpp :tangle tangle/util/camera.h
 glm::vec3 _target;
 glm::vec3 _position;
 glm::vec3 _forward;
@@ -4511,118 +4531,135 @@ glm::vec3 _up;
 float _distance;
 #+END_SRC
 
-The =update= function projects the screen space forward, right and up vectors into world space.
+Handling user input events depends on tracking some additional state to compute the
+delta between current and previous mouse location as well as the currently active
+manipulation.
 
-#+NAME: camera-projection
-#+BEGIN_SRC cpp :eval no :main no
-_position = _target + glm::axis(_rotation * glm::quat(0, 0, _distance, 0) * glm::conjugate(_rotation));
-_forward = glm::normalize(_target - _position);
-_right = glm::axis(_rotation * glm::quat(0, -1, 0, 0) * glm::conjugate(_rotation));
-_up = glm::axis(_rotation * glm::quat(0, glm::cross(glm::vec3(0, 1, 0), glm::vec3(-1, 0, 0))) * glm::conjugate(_rotation));
+#+BEGIN_SRC cpp :tangle tangle/util/camera.h
+float2 _lastMouse;
+bool _dragging;
+bool _moving;
 #+END_SRC
 
-Finally we need to handle user input events to change the translation vector
-and rotation state.
+The =update= function projects the screen space forward, right and up vectors into world space.
 
-#+NAME: camera-event-handling
-#+BEGIN_SRC cpp :eval no :main no
-switch (event.type) {
-case sf::Event::MouseWheelMoved:
-  _distance -= event.mouseWheel.delta * 10;
-  break;
-case sf::Event::MouseButtonPressed:
-  if (event.mouseButton.button == sf::Mouse::Left) {
-    _dragging = true;
-    _lastMouse = make_float2(event.mouseButton.x, event.mouseButton.y);
-  } else if (event.mouseButton.button == sf::Mouse::Right) {
-    _moving = true;
-    _lastMouse = make_float2(event.mouseButton.x, event.mouseButton.y);
-  }
-  break;
-case sf::Event::MouseButtonReleased:
-  if (event.mouseButton.button == sf::Mouse::Left) {
-    _dragging = false;
-  } else if (event.mouseButton.button == sf::Mouse::Right) {
-    _moving = false;
-  }
-  break;
-case sf::Event::MouseMoved:
-  float2 mouse = make_float2(event.mouseMove.x, event.mouseMove.y);
-  if (_dragging) {
-    float2 delta = 0.005 * (mouse - _lastMouse);
-    glm::quat rotation_z = glm::vec3(0,0,delta.x);
-    glm::quat rotation_x = glm::vec3(delta.y,0,0);
-    _rotation *= glm::cross(rotation_x, rotation_z);
-  }
-  if (_moving) {
-    float2 delta = 0.04 * (mouse - _lastMouse);
-    _target += _right*delta.x + _up*delta.y;
-  }
-  _lastMouse = mouse;
-  break;
+#+BEGIN_SRC cpp :tangle tangle/util/camera.h
+void update() {
+  _position = _target + apply(_rotation, glm::vec3(0, _distance, 0));
+  _forward = glm::normalize(_target - _position);
+  _right = apply(_rotation, glm::vec3(-1, 0, 0));
+  _up = apply(_rotation, glm::cross(glm::vec3(0, 1, 0), glm::vec3(-1, 0, 0)));
 }
 #+END_SRC
 
-#+NAME: camera
-#+BEGIN_SRC cpp
-class Camera {
-private:
-  <<camera-spherical-coordinates>>
-  <<camera-cartesian-coordinates>>
-  bool _dragging;
-  bool _moving;
-  float2 _lastMouse;
+The camera's initial view will be at a =distance= from a given =target= position.
 
+#+BEGIN_SRC cpp :tangle tangle/util/camera.h
 public:
-  Camera(float3 target, float distance):
-    _distance(distance),
-    _target(target.x, target.y, target.z),
-    _dragging(false),
-    _moving(false) {
-    update();
-  }
-
-  void update() {
-    <<camera-projection>>
-  }
-
-  void handle(sf::Event& event) {
-    <<camera-event-handling>>
-    update();
-  }
-
-  float3 getPosition() const {
-    return make_float3(_position.x, _position.y, _position.z);
-  }
-  float3 getForward() const {
-    return make_float3(_forward.x, _forward.y, _forward.z);
-  }
-  float3 getRight() const {
-    return make_float3(_right.x, _right.y, _right.z);
-  }
-  float3 getUp() const {
-    return make_float3(_up.x, _up.y, _up.z);
-  }
-};
+Camera(float3 target, float distance):
+  _distance(distance),
+  _target(target.x, target.y, target.z),
+  _dragging(false),
+  _moving(false) {
+  update();
+}
 #+END_SRC
 
-#+BEGIN_SRC cpp :tangle tangle/util/camera.h :eval no :main no
-#include <cuda-samples/Common/helper_math.h>
-#include <glm/gtx/quaternion.hpp>
-#include "SFML/Window/Event.hpp"
+The event handler accepts SFML-provided input events and selects the current manipulation
+tool depending on which mouse button is pressed.
 
-<<camera>>
+#+BEGIN_SRC cpp :tangle tangle/util/camera.h
+void handle(sf::Event& event) {
+  switch (event.type) {
+  case sf::Event::MouseButtonPressed:
+    if (event.mouseButton.button == sf::Mouse::Left) {
+      _dragging = true;
+      _lastMouse = make_float2(event.mouseButton.x, event.mouseButton.y);
+    } else if (event.mouseButton.button == sf::Mouse::Right) {
+      _moving = true;
+      _lastMouse = make_float2(event.mouseButton.x, event.mouseButton.y);
+    }
+    break;
+  case sf::Event::MouseButtonReleased:
+    if (event.mouseButton.button == sf::Mouse::Left) {
+      _dragging = false;
+    } else if (event.mouseButton.button == sf::Mouse::Right) {
+      _moving = false;
+    }
+    break;
+#+END_SRC
+
+Next we change the translation and rotation vectors to zoom when the mouse wheel
+is turned…
+
+#+BEGIN_SRC cpp :tangle tangle/util/camera.h
+  case sf::Event::MouseWheelMoved:
+    _distance -= event.mouseWheel.delta * 10;
+    break;
+#+END_SRC
+
+…rotate around the current screen-relative x- and z-axis…
+
+#+BEGIN_SRC cpp :tangle tangle/util/camera.h
+  case sf::Event::MouseMoved:
+    float2 mouse = make_float2(event.mouseMove.x, event.mouseMove.y);
+    if (_dragging) {
+      float2 delta = 0.005 * (mouse - _lastMouse);
+      glm::quat rotation_z = glm::vec3(0,0,delta.x);
+      glm::quat rotation_x = glm::vec3(delta.y,0,0);
+      _rotation *= glm::cross(rotation_x, rotation_z);
+    }
+#+END_SRC
+
+…or move the target point while preserving rotation.
+
+#+BEGIN_SRC cpp :tangle tangle/util/camera.h
+    if (_moving) {
+      float2 delta = 0.04 * (mouse - _lastMouse);
+      _target += _right*delta.x + _up*delta.y;
+    }
+    _lastMouse = mouse;
+    break;
+  }
+  update();
+}
+#+END_SRC
+
+Finally we need to provide a set of method through which the
+ray marching code can access the camera parametrization.
+
+#+BEGIN_SRC cpp :tangle tangle/util/camera.h
+float3 getPosition() const {
+  return make_float3(_position.x, _position.y, _position.z);
+}
+float3 getForward() const {
+  return make_float3(_forward.x, _forward.y, _forward.z);
+}
+float3 getRight() const {
+  return make_float3(_right.x, _right.y, _right.z);
+}
+float3 getUp() const {
+  return make_float3(_up.x, _up.y, _up.z);
+}
+};
 #+END_SRC
 
 *** Samplers
 #+BEGIN_SRC cpp :tangle tangle/sampler/sampler.h
 #pragma once
-
 #include <LLBM/base.h>
 
 class RenderWindow;
 class VolumetricRenderConfig;
+#+END_SRC
 
+All methods for mapping interfacing lattice data and image synthesizer
+share the common base class =Sampler=. This class provides a texture
+buffer for storing the sampled information as well as the common
+interface consisting of =sample=, =render= and =interact= methods to
+be called by higher-level scaffolding.
+
+#+BEGIN_SRC cpp :tangle tangle/sampler/sampler.h
 class Sampler {
 protected:
 const std::string _name;
@@ -4652,13 +4689,15 @@ virtual void interact() = 0;
 
 *** Scaffolding
 <<sec:volumetric-scaffold>>
-#+NAME: volumetric-example-add-sampler
-#+BEGIN_SRC cpp
-template <template<typename...> class SAMPLER, typename... ARGS>
-void add(ARGS&&... args) {
-  _sampler.emplace_back(new SAMPLER(std::forward<ARGS>(args)...));
-  _current = _sampler.back().get();
-}
+#+BEGIN_SRC cpp :tangle tangle/util/volumetric_example.h
+#pragma once
+#include <LLBM/volumetric.h>
+#include "camera.h"
+#include "texture.h"
+#include "colormap.h"
+#include "noise.h"
+#include "render_window.h"
+#include "../sampler/sampler.h"
 #+END_SRC
 
 Any =Sampler= implementations we want to provide in a given simulation are maintained in a central
@@ -4666,31 +4705,98 @@ Any =Sampler= implementations we want to provide in a given simulation are maint
 which the relevant =Sampler::sample=, =Sampler::interact=  and =Sampler::render= methods are
 going to be called.
 
-The =run= method controls a separate thread for updating the simulation state separately from any
-visualization. This way we can e.g. vary the simulation speed or evaluate different visualization
+#+BEGIN_SRC cpp :tangle tangle/util/volumetric_example.h
+class VolumetricExample : public RenderWindow {
+private:
+std::vector<std::unique_ptr<Sampler>> _sampler;
+Sampler* _current = nullptr;
+#+END_SRC
+
+We also maintain instances of the previously defined camera controller, render configuration,
+color palette and a noise source for jittering the ray origins.
+
+#+BEGIN_SRC cpp :tangle tangle/util/volumetric_example.h
+Camera _camera;
+VolumetricRenderConfig _config;
+ColorPalette _palette;
+NoiseSource _noise;
+
+int _steps_per_second = 100;
+int _samples_per_second = 30;
+#+END_SRC
+
+Example cases construct their samplers using the =add= method.
+
+#+BEGIN_SRC cpp :tangle tangle/util/volumetric_example.h
+public:
+template <template<typename...> class SAMPLER, typename... ARGS>
+void add(ARGS&&... args) {
+  _sampler.emplace_back(new SAMPLER(std::forward<ARGS>(args)...));
+  _current = _sampler.back().get();
+}
+#+END_SRC
+
+At its core the =VolumetricExample= class offers a =run= method that calls
+the example-specific simulation code via the =step= callable.
+
+#+BEGIN_SRC cpp :tangle tangle/util/volumetric_example.h
+template <typename TIMESTEP>
+void run(TIMESTEP step) {
+  sf::Clock last_sample;
+  sf::Clock last_frame;
+  std::size_t iStep = 0;
+  volatile bool simulate = true;
+#+END_SRC
+
+Next, the method instantiates a separate thread for updating the simulation state independently
+of visualization. This way we can e.g. vary the simulation speed or evaluate different visualization
 setups for a paused state.
 
-#+NAME: volumetric-example-simulation-thread
-#+BEGIN_SRC cpp
-sf::Thread simulation([&]() {
-  while (this->isOpen()) {
-    if (last_sample.getElapsedTime().asSeconds() > 1.0 / _samples_per_second) {
-      _current->sample();
-      cudaStreamSynchronize(cudaStreamPerThread);
-      last_sample.restart();
-      if (simulate) {
-        for (unsigned i=0; i < (1.0 / _samples_per_second) * _steps_per_second; ++i) {
-          step(iStep++);
+#+BEGIN_SRC cpp :tangle tangle/util/volumetric_example.h
+  sf::Thread simulation([&]() {
+    while (this->isOpen()) {
+      if (last_sample.getElapsedTime().asSeconds() > 1.0 / _samples_per_second) {
+        _current->sample();
+        cudaStreamSynchronize(cudaStreamPerThread);
+        last_sample.restart();
+        if (simulate) {
+          for (unsigned i=0; i < (1.0 / _samples_per_second) * _steps_per_second; ++i) {
+            step(iStep++);
+          }
         }
       }
     }
-  }
-});
-simulation.launch();
+  });
+  simulation.launch();
 #+END_SRC
 
-In addition to controlling the simulation the sampler selection can be changed
-interactively.
+After the simulation thread has been started we enter the main visualization loop. This
+loop will keep running as long as the window is opened, all the while calling the =draw=
+method at the desired frame rate.
+
+#+BEGIN_SRC cpp :tangle tangle/util/volumetric_example.h
+  while (this->isOpen()) {
+    this->draw(
+      [&](){
+        <<volumetric-example-simulation-control>>
+        <<volumetric-example-render-control>>
+      },
+      [&](sf::Event& event) {
+        <<volumetric-example-handle-events>>
+      }
+    );
+    if (last_frame.getElapsedTime().asSeconds() > 1.0 / _samples_per_second) {
+      _current->render(_config);
+      cudaStreamSynchronize(cudaStreamPerThread);
+      last_frame.restart();
+    }
+  }
+
+  simulation.wait();
+}
+#+END_SRC
+
+During event handling the sampler selection can be changed interactively.
 
 #+NAME: volumetric-example-simulation-control
 #+BEGIN_SRC cpp
@@ -4738,7 +4844,7 @@ if (ImGui::CollapsingHeader("Details")) {
 ImGui::End();
 #+END_SRC
 
-Any input events that are not captured by the UI framework are used to control camera placement.
+Any input events that are not captured by the UI framework are passed to the camera controller.
 
 #+NAME: volumetric-example-handle-events
 #+BEGIN_SRC cpp
@@ -4750,31 +4856,9 @@ _config.camera_up = _camera.getUp();
 _config.canvas_size = make_uint2(this->getRenderView().width, this->getRenderView().height);
 #+END_SRC
 
+Finally a constructor is needed to instantiate the rendering environment.
+
 #+BEGIN_SRC cpp :tangle tangle/util/volumetric_example.h
-#pragma once
-#include <LLBM/volumetric.h>
-
-#include "camera.h"
-#include "texture.h"
-#include "colormap.h"
-#include "noise.h"
-#include "render_window.h"
-#include "../sampler/sampler.h"
-
-class VolumetricExample : public RenderWindow {
-private:
-std::vector<std::unique_ptr<Sampler>> _sampler;
-Sampler* _current = nullptr;
-
-Camera _camera;
-VolumetricRenderConfig _config;
-ColorPalette _palette;
-NoiseSource _noise;
-
-int _steps_per_second = 100;
-int _samples_per_second = 30;
-
-public:
 VolumetricExample(descriptor::CuboidD<3> cuboid):
   RenderWindow("LiterateLB"),
   _camera(make_float3(cuboid.nX/2,cuboid.nY/2,cuboid.nZ/2), cuboid.nX),
@@ -4784,37 +4868,6 @@ VolumetricExample(descriptor::CuboidD<3> cuboid):
 {
   _config.canvas = this->getRenderSurface();
   this->setBlur(_config.apply_blur);
-}
-
-<<volumetric-example-add-sampler>>
-
-template <typename TIMESTEP>
-void run(TIMESTEP step) {
-  sf::Clock last_sample;
-  sf::Clock last_frame;
-  std::size_t iStep = 0;
-  volatile bool simulate = true;
-
-  <<volumetric-example-simulation-thread>>
-
-  while (this->isOpen()) {
-    this->draw(
-      [&](){
-        <<volumetric-example-simulation-control>>
-        <<volumetric-example-render-control>>
-      },
-      [&](sf::Event& event) {
-        <<volumetric-example-handle-events>>
-      }
-    );
-    if (last_frame.getElapsedTime().asSeconds() > 1.0 / _samples_per_second) {
-      _current->render(_config);
-      cudaStreamSynchronize(cudaStreamPerThread);
-      last_frame.restart();
-    }
-  }
-
-  simulation.wait();
 }
 
 };
@@ -5012,7 +5065,7 @@ const float u_lid = 0.05;
 #+END_SRC
 
 #+NAME: ldc-simulation-step
-#+BEGIN_SRC cpp :eval no :main no
+#+BEGIN_SRC cpp
 lattice.apply(Operator(BgkCollideO(), bulk_mask, tau),
               Operator(BounceBackO(), wall_mask),
               Operator(BounceBackMovingWallO(), lid_mask, std::min(iStep*1e-3, 1.0)*u_lid, 0.f));
@@ -5264,7 +5317,7 @@ sweep of the lattice. This is followed by calling =BouzidiO= on the SDF-generate
 boundary configuration.
 
 #+NAME: magnus-simulation-step
-#+BEGIN_SRC cpp :eval no :main no
+#+BEGIN_SRC cpp
 lattice.apply(Operator(BgkCollideO(), bulk_mask, tau),
               Operator(BounceBackFreeSlipO(), wall_mask, WallNormal<0,1>()),
               Operator(EquilibriumVelocityWallO(), inflow_mask, std::min(iStep*1e-5, 1.)*u_inflow, WallNormal<1,0>()),
@@ -5727,7 +5780,7 @@ As 3D simulations are generally what is of relevance for practical applications 
 using a =D3Q19= lattice of single and double precision values.
 
 #+NAME: benchmark-ldc-setup-lattice
-#+BEGIN_SRC cpp :eval no :main no
+#+BEGIN_SRC cpp
 Lattice<DESCRIPTOR,T> lattice(cuboid);
 
 CellMaterials<DESCRIPTOR> materials(cuboid, [&cuboid](uint3 p) -> int {
@@ -5758,7 +5811,7 @@ cudaDeviceSynchronize();
 The simulation step consists of BGK collisions in the bulk and bounce back boundaries at the sides.
 
 #+NAME: benchmark-ldc-simulation-step
-#+BEGIN_SRC cpp :eval no :main no
+#+BEGIN_SRC cpp
 lattice.apply(Operator(BgkCollideO(), bulk_mask, 0.56),
               Operator(BounceBackO(), box_mask),
               Operator(BounceBackMovingWallO(), lid_mask, 0.05f, 0.f, 0.f));

@@ -1,5 +1,4 @@
 #pragma once
-
 #include <LLBM/base.h>
 
 class RenderWindow;

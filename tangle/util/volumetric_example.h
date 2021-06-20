@@ -1,6 +1,5 @@
 #pragma once
 #include <LLBM/volumetric.h>
-
 #include "camera.h"
 #include "texture.h"
 #include "colormap.h"
@@ -22,17 +21,6 @@ int _steps_per_second = 100;
 int _samples_per_second = 30;
 
 public:
-VolumetricExample(descriptor::CuboidD<3> cuboid):
-  RenderWindow("LiterateLB"),
-  _camera(make_float3(cuboid.nX/2,cuboid.nY/2,cuboid.nZ/2), cuboid.nX),
-  _config(cuboid),
-  _palette(_config.palette),
-  _noise(_config.noise)
-{
-  _config.canvas = this->getRenderSurface();
-  this->setBlur(_config.apply_blur);
-}
-
 template <template<typename...> class SAMPLER, typename... ARGS>
 void add(ARGS&&... args) {
   _sampler.emplace_back(new SAMPLER(std::forward<ARGS>(args)...));
@@ -118,6 +106,17 @@ void run(TIMESTEP step) {
   }
 
   simulation.wait();
+}
+
+VolumetricExample(descriptor::CuboidD<3> cuboid):
+  RenderWindow("LiterateLB"),
+  _camera(make_float3(cuboid.nX/2,cuboid.nY/2,cuboid.nZ/2), cuboid.nX),
+  _config(cuboid),
+  _palette(_config.palette),
+  _noise(_config.noise)
+{
+  _config.canvas = this->getRenderSurface();
+  this->setBlur(_config.apply_blur);
 }
 
 };
