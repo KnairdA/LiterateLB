@@ -5547,7 +5547,7 @@ cudaSetDevice(0);
 After including the relevant headers we construct the D3Q19 lattice.
 
 #+BEGIN_SRC cpp :tangle tangle/taylor-couette.cu
-const descriptor::Cuboid<DESCRIPTOR> cuboid(320, 96, 96);
+const descriptor::Cuboid<DESCRIPTOR> cuboid(500, 96, 96);
 Lattice<DESCRIPTOR,T> lattice(cuboid);
 #+END_SRC
 
@@ -5624,8 +5624,8 @@ lattice.apply<BouzidiO>(bouzidi.getCount(), bouzidi.getConfig());
 lattice.stream();
 #+END_SRC
 
-Finally the volumetric renderer is used to control the simulation
-loop and to provide velocity and curl norm visualizations.
+Finally the volumetric example renderer is used to control the simulation
+loop and to provide velocity, curl norm and shear layer visualizations.
 
 #+BEGIN_SRC cpp :tangle tangle/taylor-couette.cu
 VolumetricExample renderer(cuboid);
@@ -5636,6 +5636,14 @@ renderer.run([&](std::size_t iStep) {
 });
 }
 #+END_SRC
+
+After compiling the tangled program and playing around with the rendering
+settings for the shear layer sampler, we end up with something similar to
+this:
+
+#+BEGIN_EXPORT html
+<video style="width:100%" src="https://literatelb.org/media/taylor-couette.webm" playsinline muted controls/>
+#+END_EXPORT
 
 ** Nozzle
 This is the example that was used to provide the teaser video at the start of this

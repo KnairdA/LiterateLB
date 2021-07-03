@@ -17,7 +17,7 @@ using DESCRIPTOR = descriptor::D3Q19;
 int main() {
 cudaSetDevice(0);
 
-const descriptor::Cuboid<DESCRIPTOR> cuboid(320, 96, 96);
+const descriptor::Cuboid<DESCRIPTOR> cuboid(500, 96, 96);
 Lattice<DESCRIPTOR,T> lattice(cuboid);
 
 CellMaterials<DESCRIPTOR> materials(cuboid, [&cuboid](uint3 p) -> int {
