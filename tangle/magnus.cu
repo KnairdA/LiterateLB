@@ -18,7 +18,7 @@ cudaSetDevice(0);
 const descriptor::Cuboid<DESCRIPTOR> cuboid(1200, 500);
 Lattice<DESCRIPTOR,T> lattice(cuboid);
 
-const float tau = 0.54;
+const float tau = 0.52;
 const float u_inflow = 0.02;
 const float u_rotate = 0.08;
 
@@ -74,14 +74,11 @@ cudaDeviceSynchronize();
 RenderWindow window("Magnus");
 cudaSurfaceObject_t colormap;
 ColorPalette palette(colormap);
-auto slice = [cuboid] __device__ (int iX, int iY) -> std::size_t {
-               return descriptor::gid(cuboid,iX,cuboid.nY-1-iY);
-             };
 DeviceBuffer<T> moments_rho(cuboid.volume);
 DeviceBuffer<T> moments_u(2*cuboid.volume);
 T* u = moments_u.device();
-std::size_t iStep = 0;
 
+std::size_t iStep = 0;
 while (window.isOpen()) {
   lattice.apply(Operator(BgkCollideO(), bulk_mask, tau),
                 Operator(BounceBackFreeSlipO(), wall_mask, WallNormal<0,1>()),
@@ -90,14 +87,16 @@ while (window.isOpen()) {
                 Operator(BounceBackO(), edge_mask));
   lattice.apply<BouzidiO>(bouzidi.getCount(), bouzidi.getConfig());
   lattice.stream();
-  if (iStep % 100 == 0) {
+  if (iStep % 200 == 0) {
     cudaDeviceSynchronize();
     lattice.inspect<CollectMomentsF>(bulk_mask, moments_rho.device(), moments_u.device());
     renderSliceViewToTexture<<<
       dim3(cuboid.nX / 32 + 1, cuboid.nY / 32 + 1),
       dim3(32,32)
     >>>(cuboid.nX, cuboid.nY,
-        slice,
+        [cuboid] __device__ (int iX, int iY) -> std::size_t {
+          return descriptor::gid(cuboid,iX,cuboid.nY-1-iY);
+        },
         [u,u_rotate] __device__ (std::size_t gid) -> float {
           return length(make_float2(u[2*gid+0], u[2*gid+1])) / u_rotate;
         },
