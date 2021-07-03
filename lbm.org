@@ -4283,10 +4283,14 @@ less noticable for smaller step widths these are not desirable from a performanc
 Our renderer employs view-aligned slicing and random jittering to remove visible slicing.
 The choice of /randomness/ for jittering the ray origin is critical here as plain random numbers
 produce a ugly static-like pattern. A common choice in practice is to use so called /blue noise/
-instead.
+instead. Noise is called /blue/ if it contains only higher frequency components which makes it
+harder for the pattern recognizer that we call brain to find patterns where there should be none.
 
 For performance it makes sense to precompute such blue noise into tileable textures 
 than can then be easily used to fetch per-pixel-ray jitter offsets.
+
+The void-and-cluster algorithm cite:ulichneyVoidandclusterMethodDither1993
+provides a straight forward method for generating tileable blue noise textures.
 
 #+BEGIN_SRC python :session :results none
 import numpy as np
@@ -4295,20 +4299,36 @@ from numpy.ma import masked_array
 from scipy.ndimage import gaussian_filter
 #+END_SRC
 
+The first ingredient for this algorithm is a =filteredPattern= function that applies a
+plain Gaussian filter with given $\sigma$ to a cyclic 2d array. Using cyclic wrapping here is
+what makes the generated texture tileable.
+
 #+BEGIN_SRC python :session :results none
 def filteredPattern(pattern, sigma):
     return gaussian_filter(pattern.astype(float), sigma=sigma, mode='wrap', truncate=np.max(pattern.shape))
 #+END_SRC
+
+This function will be used to compute the locations of the largest void and tightest
+cluster in a binary pattern (i.e. a 2D array of 0s and 1s). In this context a /void/ describes
+an area with only zeros and a /cluster/ describes an area with only ones.
 
 #+BEGIN_SRC python :session :results none
 def largestVoidIndex(pattern, sigma):
     return np.argmin(masked_array(filteredPattern(pattern, sigma), mask=pattern))
 #+END_SRC
 
+These two functions work by considering the given binary pattern as a float array that is blurred by
+the Gaussian filter. The blurred pattern gives an implicit ordering of the /voidness/ of each pixel, the
+minimum of which we can determine by a simple search. It is important to exclude the initial binary
+pattern here as void-and-cluster depends on finding the largest areas where no pixel is set.
+
 #+BEGIN_SRC python :session :results none
 def tightestClusterIndex(pattern, sigma):
     return np.argmax(masked_array(filteredPattern(pattern, sigma), mask=np.logical_not(pattern)))
 #+END_SRC
+
+Computing the tightest cluster works in the same way with the exception of searching the largest array
+element and masking by the inverted pattern.
 
 #+BEGIN_SRC python :session :results none
 def initialPattern(shape, n_start, sigma):
@@ -4325,6 +4345,11 @@ def initialPattern(shape, n_start, sigma):
     
     return initial_pattern
 #+END_SRC
+
+For the initial binary pattern we set =n_start= random locations to one and then repeatedly
+break up the largest void by setting its center to one. This is also done for the tightest cluster
+by setting its center to zero. We do this until the locations of the tightest cluster and largest
+void overlap.
 
 #+BEGIN_SRC python :session :results none
 def blueNoise(shape, sigma):
@@ -4354,8 +4379,18 @@ def blueNoise(shape, sigma):
     return noise / (n-1)
 #+END_SRC
 
+The actual algorithm utilizes these three helper functions in  four steps:
+1. Initial pattern generation
+2. Eliminiation of =n_start= tightest clusters
+3. Elimination of =n/2-n_start= largest voids
+4. Elimination of =n-n/2= tightest clusters of inverse pattern
+For each elimination the current =rank= is stored in the noise texture
+producing a 2D arrangement of the integers from 0 to =n=. As the last
+step the array is divided by =n-1= to yield a grayscale texture with values
+in $[0,1]$.
+
 #+BEGIN_SRC python :session :results file :cache yes
-test_noise = blueNoise((51,51), 1.5)
+test_noise = blueNoise((101,101), 1.9)
 test_noise_path = 'tangle/tmp/test_noise.png'
 
 fig, axs = plt.subplots(1,2, figsize=(8,4), sharey=True)
@@ -4370,7 +4405,7 @@ fig.savefig(test_noise_path, bbox_inches='tight', pad_inches=0)
 test_noise_path
 #+END_SRC
 
-#+RESULTS[0a8e452b001df3a7538378936788f3d942c7939c]:
+#+RESULTS[d74551fb6d155b85b3fce050ac0b5561ee217040]:
 [[file:tangle/tmp/test_noise.png]]
 
 #+NAME: blue-noise-values
@@ -4378,7 +4413,7 @@ test_noise_path
 fig, axs = plt.subplots(1,5, figsize=(8,2))
 
 for i in range(5):
-    noise = blueNoise((32,32), 1.5)
+    noise = blueNoise((32,32), 1.9)
     noise_rgb = np.dstack((noise,noise,noise))
     plt.imsave(f"tangle/asset/noise/blue_{ i }.png", noise_rgb)
     axs[i].imshow(noise_rgb)
@@ -4389,7 +4424,7 @@ fig.savefig(noise_overview_path, bbox_inches='tight', pad_inches=0)
 noise_overview_path
 #+END_SRC
 
-#+RESULTS[f7b10e2cb3a1e94192fb867be7572976f572cec5]: blue-noise-values
+#+RESULTS[124750b29bb542c10bf3a939d5226f502f0f98f9]: blue-noise-values
 [[file:tangle/tmp/noise_overview.png]]
 
 #+BEGIN_SRC cpp :tangle tangle/util/noise.h
@@ -4402,13 +4437,8 @@ noise_overview_path
 #include <SFML/Graphics.hpp>
 #+END_SRC
 
-#+BEGIN_SRC cpp :tangle tangle/LLBM/memory.h
-__device__ float noiseFromTexture(cudaSurfaceObject_t noisemap, int x, int y) {
-  uchar4 color{};
-  surf2Dread(&color, noisemap, x*sizeof(uchar4), y);
-  return color.x / 255.f;
-}
-#+END_SRC
+In order to manage the noise texture at runtime we implement a simple =NoiseSource=
+similar to the =ColorPalette= class.
 
 #+BEGIN_SRC cpp :tangle tangle/util/noise.h
 struct NoiseSource {
@@ -4424,6 +4454,19 @@ struct NoiseSource {
   void interact();
 };
 #+END_SRC
+
+The values of the selected noise texture are also accessed similarly.
+
+#+BEGIN_SRC cpp :tangle tangle/LLBM/memory.h
+__device__ float noiseFromTexture(cudaSurfaceObject_t noisemap, int x, int y) {
+  uchar4 color{};
+  surf2Dread(&color, noisemap, x*sizeof(uchar4), y);
+  return color.x / 255.f;
+}
+#+END_SRC
+
+The interaction UI only provides a image-displaying drop down box to choose
+between the five different noise textures generated in this section.
 
 #+BEGIN_SRC cpp :tangle tangle/util/noise.h
 void NoiseSource::interact() {

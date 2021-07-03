@@ -76,6 +76,7 @@ in pkgs.stdenv.mkDerivation rec {
       numpy
       Mako
       scipy
+      matplotlib
     ]);
 
   in with pkgs; [
