@@ -5452,6 +5452,9 @@ while (window.isOpen()) {
 }
 #+END_SRC
 
+Contrasting the rotating and non-rotating cylinders we can observe both the
+magnus effect and the formation of a Kármán vortex street.
+
 #+BEGIN_EXPORT html
 <video style="width:100%" src="https://literatelb.org/media/magnus.webm" playsinline muted controls loop/>
 #+END_EXPORT
@@ -5794,8 +5797,8 @@ lattice.apply<BouzidiO>(bouzidi.getCount(), bouzidi.getConfig());
 lattice.stream();
 #+END_SRC
 
-Finally the volumetric renderer is used to control the simulation
-loop and to provide velocity and curl norm visualizations.
+Finally the volumetric renderer is again used to control the
+simulation loop and to provide various visualizations.
 
 #+BEGIN_SRC cpp :tangle tangle/nozzle.cu
 VolumetricExample renderer(cuboid);
@@ -5807,6 +5810,12 @@ renderer.run([&](std::size_t iStep) {
 });
 }
 #+END_SRC
+
+For example, this is how the velocity magnitude visualization evolves:
+
+#+BEGIN_EXPORT html
+<video style="width:100%" src="https://literatelb.org/media/nozzle.webm" playsinline muted controls/>
+#+END_EXPORT
 
 * Benchmark
 ** Performance Measurement
