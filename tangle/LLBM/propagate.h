@@ -79,7 +79,7 @@ CyclicPopulationBuffer<DESCRIPTOR,S>::CyclicPopulationBuffer(
 
   for (unsigned iPop=0; iPop < DESCRIPTOR::q; ++iPop) {
     // per-population handle until cuMemMap accepts non-zero offset
-    cuMemCreate(&_handle[iPop], _volume, &_prop, 0); 
+    cuMemCreate(&_handle[iPop], _volume, &_prop, 0);
     cuMemMap(_ptr + iPop * 2 * _volume,           _volume, 0, _handle[iPop], 0);
     cuMemMap(_ptr + iPop * 2 * _volume + _volume, _volume, 0, _handle[iPop], 0);
   }
@@ -88,7 +88,11 @@ CyclicPopulationBuffer<DESCRIPTOR,S>::CyclicPopulationBuffer(
   _access.location.id = 0;
   _access.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
   cuMemSetAccess(_ptr, 2 * _volume * DESCRIPTOR::q, &_access, 1);
-  cuMemsetD8(_ptr, 0, 2 * _volume * DESCRIPTOR::q);
+
+  for (unsigned iPop=0; iPop < DESCRIPTOR::q; ++iPop) {
+    float eq = descriptor::weight<DESCRIPTOR>(iPop);
+    cuMemsetD32(_ptr + iPop * 2 * _volume, *reinterpret_cast<int*>(&eq), 2 * (_volume / sizeof(S)));
+  }
 
   for (unsigned iPop=0; iPop < DESCRIPTOR::q; ++iPop) {
     _base[iPop] = device() + iPop * 2 * (_volume / sizeof(S));

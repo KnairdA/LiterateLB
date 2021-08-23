@@ -261,7 +261,7 @@ class CodeBlockPrinter(C11CodePrinter):
         self.custom_assignment = custom_assignment
         for f in custom_functions:
             self._kf[f] = f
-     
+    
     def _print_Indexed(self, expr):
         assert len(expr.indices) == 1
         if expr.base.name[0] == 'f':
@@ -551,53 +551,6 @@ f_next[6] = e0*(-e1 + e15 + e18 + e2);
 f_next[7] = e11*(e14 + e2);
 f_next[8] = e0*(e13 + e16 + e2 + e4);
 #+end_example
-
-For initialization of lattice data it often makes sense to choose values that are invariant under this
-equilibrium computation. Cells initialized in this way will not change during the collision step
-and as such can be considered to model a fluid /at rest/.
-
-#+BEGIN_SRC python :session :results none
-def initialize_equilibrium(D):
-    return [ Assignment(IndexedBase("f_next", D.q)[i], w_i) for i, w_i in enumerate(D.w) ]
-#+END_SRC
-
-#+NAME: initialize-populations
-#+BEGIN_SRC python :session :results output
-D = descriptor[lattice]
-printcode(CodeBlock(*initialize_equilibrium(D)))
-#+END_SRC
-
-#+RESULTS: initialize-populations
-: f_next[0] = T{0.0277777777777778};
-: f_next[1] = T{0.111111111111111};
-: f_next[2] = T{0.0277777777777778};
-: f_next[3] = T{0.111111111111111};
-: f_next[4] = T{0.444444444444444};
-: f_next[5] = T{0.111111111111111};
-: f_next[6] = T{0.0277777777777778};
-: f_next[7] = T{0.111111111111111};
-: f_next[8] = T{0.0277777777777778};
-
-#+BEGIN_SRC cpp :tangle tangle/LLBM/kernel/initialize.h
-#pragma once
-#include <LLBM/call_tag.h>
-
-struct InitializeO {
-
-using call_tag = tag::call_by_cell_id;
-
-template <typename T, typename S>
-__device__ static void apply(descriptor::D2Q9, S f_curr[9], S f_next[9], std::size_t gid) {
-  <<initialize-populations(lattice="D2Q9")>>
-}
-
-template <typename T, typename S>
-__device__ static void apply(descriptor::D3Q19, S f_curr[19], S f_next[19], std::size_t gid) {
-  <<initialize-populations(lattice="D3Q19")>>
-}
-
-};
-#+END_SRC
 
 ** BGK Collision
 The BGK collision operators takes a current population $f^{curr}_i$ and /relaxes/ it toward the equilibrium distribution
@@ -1524,21 +1477,29 @@ mapped into this address area.
 #+BEGIN_SRC cpp :tangle tangle/LLBM/propagate.h
   for (unsigned iPop=0; iPop < DESCRIPTOR::q; ++iPop) {
     // per-population handle until cuMemMap accepts non-zero offset
-    cuMemCreate(&_handle[iPop], _volume, &_prop, 0); 
+    cuMemCreate(&_handle[iPop], _volume, &_prop, 0);
     cuMemMap(_ptr + iPop * 2 * _volume,           _volume, 0, _handle[iPop], 0);
     cuMemMap(_ptr + iPop * 2 * _volume + _volume, _volume, 0, _handle[iPop], 0);
   }
 #+END_SRC
 
 Actually reading from and writing to locations within this memory depends on setting
-the correct access flags. Once this is done we are ready to zero-initialize the buffer.
+the correct access flags
 
 #+BEGIN_SRC cpp :tangle tangle/LLBM/propagate.h
   _access.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
   _access.location.id = 0;
   _access.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
   cuMemSetAccess(_ptr, 2 * _volume * DESCRIPTOR::q, &_access, 1);
-  cuMemsetD8(_ptr, 0, 2 * _volume * DESCRIPTOR::q);
+#+END_SRC
+
+after which we are ready to initialize the buffer with lattice equilibrium values.
+
+#+BEGIN_SRC cpp :tangle tangle/LLBM/propagate.h
+  for (unsigned iPop=0; iPop < DESCRIPTOR::q; ++iPop) {
+    float eq = descriptor::weight<DESCRIPTOR>(iPop);
+    cuMemsetD32(_ptr + iPop * 2 * _volume, *reinterpret_cast<int*>(&eq), 2 * (_volume / sizeof(S)));
+  }
 #+END_SRC
 
 As the rotation of the cyclic arrays is to be realized by shifting the per-population start pointers
@@ -2521,7 +2482,6 @@ various methods for applying operators and functors.
 #include "operator.h"
 
 #include "propagate.h"
-#include "kernel/initialize.h"
 #include "kernel/executor.h"
 
 template <typename DESCRIPTOR, typename T, typename S=T>
@@ -3942,7 +3902,7 @@ __device__ static void apply(
   , std::size_t iX
   , std::size_t iY
   , std::size_t iZ
-  , T* cell_rho 
+  , T* cell_rho
   , T* cell_u
   , T* cell_curl_norm
   , cudaSurfaceObject_t surface
@@ -5116,15 +5076,6 @@ auto wall_mask = materials.mask_of_material(2);
 auto lid_mask  = materials.mask_of_material(3);
 #+END_SRC
 
-All cells are initialized to the equilibrium distribution.
-
-#+BEGIN_SRC cpp :tangle tangle/ldc-2d.cu
-lattice.apply(Operator(InitializeO(), bulk_mask),
-              Operator(InitializeO(), wall_mask),
-              Operator(InitializeO(), lid_mask));
-cudaDeviceSynchronize();
-#+END_SRC
-
 The bulk collisions are going to use a relaxation time of \(0.51\) and the lid enacts a velocity of \(0.05\) lattice units.
 This maximum velocity can be used to scale the velocity norm for visualization.
 
@@ -5228,17 +5179,12 @@ CellMaterials<DESCRIPTOR> materials(cuboid, [&cuboid](uint3 p) -> int {
 });
 #+END_SRC
 
-At this point we are ready to generate masks for operator application and to
-initialize all cells with their equilibrium.
+At this point we are ready to generate masks for operator application.
 
 #+BEGIN_SRC cpp :tangle tangle/ldc-3d.cu
 auto bulk_mask = materials.mask_of_material(1);
 auto wall_mask = materials.mask_of_material(2);
 auto lid_mask  = materials.mask_of_material(3);
-
-lattice.apply(Operator(InitializeO(), bulk_mask),
-              Operator(InitializeO(), wall_mask),
-              Operator(InitializeO(), lid_mask));
 
 cudaDeviceSynchronize();
 #+END_SRC
@@ -5369,15 +5315,7 @@ auto outflow_mask = materials.mask_of_material(4);
 auto edge_mask = materials.mask_of_material(5);
 #+END_SRC
 
-The last step prior to starting the simulation loop is to initialize
-all cells with their equilibrium values.
-
 #+BEGIN_SRC cpp :tangle tangle/magnus.cu
-lattice.apply(Operator(InitializeO(), bulk_mask),
-              Operator(InitializeO(), wall_mask),
-              Operator(InitializeO(), inflow_mask),
-              Operator(InitializeO(), outflow_mask),
-              Operator(InitializeO(), edge_mask));
 cudaDeviceSynchronize();
 #+END_SRC
 
@@ -5538,13 +5476,6 @@ auto inflow_mask  = materials.mask_of_material(4);
 auto outflow_mask = materials.mask_of_material(5);
 auto edge_mask    = materials.mask_of_material(6);
 
-lattice.apply(Operator(InitializeO(), bulk_mask),
-              Operator(InitializeO(), wall_mask_z),
-              Operator(InitializeO(), wall_mask_y),
-              Operator(InitializeO(), inflow_mask),
-              Operator(InitializeO(), outflow_mask),
-              Operator(InitializeO(), edge_mask));
-
 cudaDeviceSynchronize();
 #+END_SRC
 
@@ -5662,9 +5593,6 @@ auto bulk_list = materials.list_of_material(1);
 auto wall_mask = materials.mask_of_material(2);
 auto wall_list = materials.list_of_material(2);
 
-lattice.apply<InitializeO>(bulk_list);
-lattice.apply<InitializeO>(wall_list);
-
 cudaDeviceSynchronize();
 #+END_SRC
 
@@ -5769,11 +5697,6 @@ auto bulk_mask     = materials.mask_of_material(1);
 auto boundary_mask = materials.mask_of_material(2);
 auto inflow_mask   = materials.mask_of_material(3);
 auto outflow_mask  = materials.mask_of_material(4);
-
-lattice.apply(Operator(InitializeO(), bulk_mask),
-              Operator(InitializeO(), boundary_mask),
-              Operator(InitializeO(), inflow_mask),
-              Operator(InitializeO(), outflow_mask));
 
 cudaDeviceSynchronize();
 #+END_SRC
@@ -5894,14 +5817,6 @@ CellMaterials<DESCRIPTOR> materials(cuboid, [&cuboid](uint3 p) -> int {
 auto bulk_mask = materials.mask_of_material(1);
 auto box_mask  = materials.mask_of_material(2);
 auto lid_mask  = materials.mask_of_material(3);
-
-auto bulk_cells = materials.list_of_material(1);
-auto box_cells  = materials.list_of_material(2);
-auto lid_cells  = materials.list_of_material(3);
-
-lattice.template apply<InitializeO>(bulk_cells);
-lattice.template apply<InitializeO>(box_cells);
-lattice.template apply<InitializeO>(lid_cells);
 
 cudaDeviceSynchronize();
 #+END_SRC

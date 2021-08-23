@@ -55,13 +55,6 @@ auto inflow_mask  = materials.mask_of_material(4);
 auto outflow_mask = materials.mask_of_material(5);
 auto edge_mask    = materials.mask_of_material(6);
 
-lattice.apply(Operator(InitializeO(), bulk_mask),
-              Operator(InitializeO(), wall_mask_z),
-              Operator(InitializeO(), wall_mask_y),
-              Operator(InitializeO(), inflow_mask),
-              Operator(InitializeO(), outflow_mask),
-              Operator(InitializeO(), edge_mask));
-
 cudaDeviceSynchronize();
 
 VolumetricExample renderer(cuboid);

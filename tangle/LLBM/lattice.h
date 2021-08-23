@@ -5,7 +5,6 @@
 #include "operator.h"
 
 #include "propagate.h"
-#include "kernel/initialize.h"
 #include "kernel/executor.h"
 
 template <typename DESCRIPTOR, typename T, typename S=T>

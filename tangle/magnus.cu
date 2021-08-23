@@ -64,11 +64,6 @@ auto inflow_mask  = materials.mask_of_material(3);
 auto outflow_mask = materials.mask_of_material(4);
 auto edge_mask = materials.mask_of_material(5);
 
-lattice.apply(Operator(InitializeO(), bulk_mask),
-              Operator(InitializeO(), wall_mask),
-              Operator(InitializeO(), inflow_mask),
-              Operator(InitializeO(), outflow_mask),
-              Operator(InitializeO(), edge_mask));
 cudaDeviceSynchronize();
 
 RenderWindow window("Magnus");

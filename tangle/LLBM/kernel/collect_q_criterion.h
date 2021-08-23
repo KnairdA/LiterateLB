@@ -14,7 +14,7 @@ __device__ static void apply(
   , std::size_t iX
   , std::size_t iY
   , std::size_t iZ
-  , T* cell_rho 
+  , T* cell_rho
   , T* cell_u
   , T* cell_curl_norm
   , cudaSurfaceObject_t surface

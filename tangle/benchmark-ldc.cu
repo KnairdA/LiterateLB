@@ -30,14 +30,6 @@ void simulate(descriptor::Cuboid<DESCRIPTOR> cuboid, std::size_t nStep) {
   auto box_mask  = materials.mask_of_material(2);
   auto lid_mask  = materials.mask_of_material(3);
   
-  auto bulk_cells = materials.list_of_material(1);
-  auto box_cells  = materials.list_of_material(2);
-  auto lid_cells  = materials.list_of_material(3);
-  
-  lattice.template apply<InitializeO>(bulk_cells);
-  lattice.template apply<InitializeO>(box_cells);
-  lattice.template apply<InitializeO>(lid_cells);
-  
   cudaDeviceSynchronize();
 
   for (std::size_t iStep=0; iStep < 100; ++iStep) {

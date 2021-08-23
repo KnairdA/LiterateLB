@@ -32,11 +32,6 @@ auto bulk_mask = materials.mask_of_material(1);
 auto wall_mask = materials.mask_of_material(2);
 auto lid_mask  = materials.mask_of_material(3);
 
-lattice.apply(Operator(InitializeO(), bulk_mask),
-              Operator(InitializeO(), wall_mask),
-              Operator(InitializeO(), lid_mask));
-cudaDeviceSynchronize();
-
 const float tau = 0.51;
 const float u_lid = 0.05;
 

@@ -55,9 +55,6 @@ auto bulk_list = materials.list_of_material(1);
 auto wall_mask = materials.mask_of_material(2);
 auto wall_list = materials.list_of_material(2);
 
-lattice.apply<InitializeO>(bulk_list);
-lattice.apply<InitializeO>(wall_list);
-
 cudaDeviceSynchronize();
 
 VolumetricExample renderer(cuboid);
