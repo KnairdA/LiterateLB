@@ -5794,11 +5794,12 @@ In order to benchmark the performance limits of our LBM code this example implem
 a lid driven cavity without any visual output.
 
 #+BEGIN_SRC cpp :tangle tangle/benchmark-ldc.cu
+using T = float;
 using DESCRIPTOR = descriptor::D3Q19;
 #+END_SRC
 
-As 3D simulations are generally what is of relevance for practical applications we are
-using a =D3Q19= lattice of single and double precision values.
+As 3D simulations are generally what is of relevance for practical applications, we are
+using a =D3Q19= lattice of single precision values.
 
 #+NAME: benchmark-ldc-setup-lattice
 #+BEGIN_SRC cpp
@@ -5835,7 +5836,6 @@ The =simulate= function accepts a the cuboid configuration together with a step 
 and the floating point type to be used for lattice data and computations.
 
 #+BEGIN_SRC cpp :tangle tangle/benchmark-ldc.cu
-template <typename T>
 void simulate(descriptor::Cuboid<DESCRIPTOR> cuboid, std::size_t nStep) {
   cudaSetDevice(0);
 
@@ -5866,7 +5866,7 @@ some very basic CLI parameter handling in the =main= function.
 
 #+BEGIN_SRC cpp :tangle tangle/benchmark-ldc.cu
 int main(int argc, char* argv[]) {
-  if (argc < 3 || argc > 4) {
+  if (argc != 3) {
     std::cerr << "Invalid parameter count" << std::endl;
     return -1;
   }
@@ -5874,22 +5874,7 @@ int main(int argc, char* argv[]) {
   const std::size_t n     = atoi(argv[1]);
   const std::size_t steps = atoi(argv[2]);
 
-  unsigned precision = 4;
-  if (argc == 4) {
-    precision = atoi(argv[3]);
-  }
-
-  switch (precision) {
-  case 4:
-    simulate<float>({ n, n, n}, steps);
-    break;
-  case 8:
-    simulate<double>({ n, n, n}, steps);
-    break;
-  default:
-    std::cerr << "Invalid precision" << std::endl;
-    return -1;
-  }
+  simulate({ n, n, n}, steps);
 
   return 0;
 }

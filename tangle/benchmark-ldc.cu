@@ -8,9 +8,9 @@
 
 #include <iostream>
 
+using T = float;
 using DESCRIPTOR = descriptor::D3Q19;
 
-template <typename T>
 void simulate(descriptor::Cuboid<DESCRIPTOR> cuboid, std::size_t nStep) {
   cudaSetDevice(0);
 
@@ -58,7 +58,7 @@ void simulate(descriptor::Cuboid<DESCRIPTOR> cuboid, std::size_t nStep) {
 }
 
 int main(int argc, char* argv[]) {
-  if (argc < 3 || argc > 4) {
+  if (argc != 3) {
     std::cerr << "Invalid parameter count" << std::endl;
     return -1;
   }
@@ -66,22 +66,7 @@ int main(int argc, char* argv[]) {
   const std::size_t n     = atoi(argv[1]);
   const std::size_t steps = atoi(argv[2]);
 
-  unsigned precision = 4;
-  if (argc == 4) {
-    precision = atoi(argv[3]);
-  }
-
-  switch (precision) {
-  case 4:
-    simulate<float>({ n, n, n}, steps);
-    break;
-  case 8:
-    simulate<double>({ n, n, n}, steps);
-    break;
-  default:
-    std::cerr << "Invalid precision" << std::endl;
-    return -1;
-  }
+  simulate({ n, n, n}, steps);
 
   return 0;
 }
