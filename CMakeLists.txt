@@ -14,7 +14,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr --default-stream per-thread --extended-lambda")
-set(CMAKE_CUDA_ARCHITECTURES 62)
+set(CMAKE_CUDA_ARCHITECTURES 86)
 
 include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}/tangle

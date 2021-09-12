@@ -15,7 +15,11 @@ using T = float;
 using DESCRIPTOR = descriptor::D3Q19;
 
 int main() {
-cudaSetDevice(0);
+if (cuda::device::count() == 0) {
+  std::cerr << "No CUDA devices on this system" << std::endl;
+  return -1;
+}
+auto current = cuda::device::current::get();
 
 const descriptor::Cuboid<DESCRIPTOR> cuboid(100, 100, 100);
 Lattice<DESCRIPTOR,T> lattice(cuboid);
@@ -34,7 +38,7 @@ auto bulk_mask = materials.mask_of_material(1);
 auto wall_mask = materials.mask_of_material(2);
 auto lid_mask  = materials.mask_of_material(3);
 
-cudaDeviceSynchronize();
+cuda::synchronize(current);
 
 auto none = [] __device__ (float3) -> float { return 1; };
 VolumetricExample renderer(cuboid);

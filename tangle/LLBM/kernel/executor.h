@@ -30,30 +30,6 @@ __global__ void call_operator(
   }
 }
 
-template <typename OPERATOR, typename DESCRIPTOR, typename T, typename S, typename... ARGS>
-__global__ void call_operator(
-    LatticeView<DESCRIPTOR,S> lattice
-  , bool* mask
-  , ARGS... args
-) {
-  const std::size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
-  if (!(gid < lattice.cuboid.volume) || !mask[gid]) {
-      return;
-  }
-
-  S f_curr[DESCRIPTOR::q];
-  S f_next[DESCRIPTOR::q];
-  S* preshifted_f[DESCRIPTOR::q];
-  for (unsigned iPop=0; iPop < DESCRIPTOR::q; ++iPop) {
-    preshifted_f[iPop] = lattice.pop(iPop, gid);
-    f_curr[iPop] = *preshifted_f[iPop];
-  }
-  OPERATOR::template apply<T,S>(DESCRIPTOR(), f_curr, f_next, gid, std::forward<ARGS>(args)...);
-  for (unsigned iPop=0; iPop < DESCRIPTOR::q; ++iPop) {
-    *preshifted_f[iPop] = f_next[iPop];
-  }
-}
-
 template <typename FUNCTOR, typename DESCRIPTOR, typename T, typename S, typename... ARGS>
 __global__ void call_functor(
     LatticeView<DESCRIPTOR,S> lattice
@@ -108,19 +84,6 @@ __global__ void call_operator_using_list(
       return;
   }
   OPERATOR::template apply<T,S>(lattice, index, count, std::forward<ARGS>(args)...);
-}
-
-template <typename OPERATOR, typename DESCRIPTOR, typename T, typename S, typename... ARGS>
-__global__ void call_operator_using_list(
-    DESCRIPTOR descriptor
-  , std::size_t count
-  , ARGS... args
-) {
-  const std::size_t index = blockIdx.x * blockDim.x + threadIdx.x;
-  if (!(index < count)) {
-      return;
-  }
-  OPERATOR::template apply<T,S>(descriptor, index, count, std::forward<ARGS>(args)...);
 }
 
 template <typename FUNCTOR, typename DESCRIPTOR, typename T, typename S, typename... ARGS>

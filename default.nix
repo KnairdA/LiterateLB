@@ -7,6 +7,23 @@
 }, ... }:
 
 let
+  cuda-api-wrappers = pkgs.stdenv.mkDerivation rec {
+    name = "cuda-api-wrappers";
+    version = "0.4.3";
+
+    src = pkgs.fetchFromGitHub {
+      owner = "eyalroz";
+      repo = "cuda-api-wrappers";
+      rev = "v${version}";
+      sha256 = "plsjzIeNjgOoJJCbrSVQp7TK30Bh/ka1SWAakYgQR2s=";
+    };
+
+    buildInputs = with pkgs; [
+      cmake
+      cudatoolkit_11
+    ];
+  };
+
   cuda-samples-common-headers = pkgs.stdenv.mkDerivation rec {
     name = "cuda-samples-common-headers";
     version = "11.1";
@@ -25,7 +42,7 @@ let
       cp -r $src/Common/* $out/include/cuda-samples/Common
     '';
   };
-    
+
   imgui-sfml = pkgs.stdenv.mkDerivation rec {
     name = "imgui-sfml";
     version = "2.1";
@@ -35,7 +52,7 @@ let
       repo = "imgui-sfml";
       rev = "v${version}";
       sha256 = "1g8gqly156miv12ajapnhmxfcv9i3fqhdmdy45gmdw47kh8ly5zj";
-    }; 
+    };
 
     buildInputs = with pkgs; [
       cmake
@@ -82,8 +99,9 @@ in pkgs.stdenv.mkDerivation rec {
   in with pkgs; [
     local-python
     cudatoolkit_11
+    cuda-api-wrappers
     cuda-samples-common-headers
-    linuxPackages.nvidia_x11 
+    linuxPackages.nvidia_x11
     libGL
     sfml
     imgui-sfml

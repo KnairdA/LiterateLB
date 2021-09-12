@@ -24,7 +24,7 @@ public:
   descriptor::Cuboid<DESCRIPTOR> cuboid() const {
     return _cuboid;
   };
- 
+
   int get(std::size_t iCell) const {
     return _materials[iCell];
   }

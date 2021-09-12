@@ -13,7 +13,11 @@ using T = float;
 using DESCRIPTOR = descriptor::D2Q9;
 
 int main() {
-cudaSetDevice(0);
+if (cuda::device::count() == 0) {
+  std::cerr << "No CUDA devices on this system" << std::endl;
+  return -1;
+}
+auto current = cuda::device::current::get();
 
 const descriptor::Cuboid<DESCRIPTOR> cuboid(1200, 500);
 Lattice<DESCRIPTOR,T> lattice(cuboid);
@@ -64,7 +68,7 @@ auto inflow_mask  = materials.mask_of_material(3);
 auto outflow_mask = materials.mask_of_material(4);
 auto edge_mask = materials.mask_of_material(5);
 
-cudaDeviceSynchronize();
+cuda::synchronize(current);
 
 RenderWindow window("Magnus");
 cudaSurfaceObject_t colormap;
@@ -83,7 +87,7 @@ while (window.isOpen()) {
   lattice.apply<BouzidiO>(bouzidi.getCount(), bouzidi.getConfig());
   lattice.stream();
   if (iStep % 200 == 0) {
-    cudaDeviceSynchronize();
+    cuda::synchronize(current);
     lattice.inspect<CollectMomentsF>(bulk_mask, moments_rho.device(), moments_u.device());
     renderSliceViewToTexture<<<
       dim3(cuboid.nX / 32 + 1, cuboid.nY / 32 + 1),

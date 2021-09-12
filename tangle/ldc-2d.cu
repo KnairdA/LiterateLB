@@ -13,7 +13,11 @@ using T = float;
 using DESCRIPTOR = descriptor::D2Q9;
 
 int main() {
-cudaSetDevice(0);
+if (cuda::device::count() == 0) {
+  std::cerr << "No CUDA devices on this system" << std::endl;
+  return -1;
+}
+auto current = cuda::device::current::get();
 
 const descriptor::Cuboid<DESCRIPTOR> cuboid(500, 500);
 Lattice<DESCRIPTOR,T> lattice(cuboid);
@@ -52,7 +56,7 @@ while (window.isOpen()) {
                 Operator(BounceBackMovingWallO(), lid_mask, std::min(iStep*1e-3, 1.0)*u_lid, 0.f));
   lattice.stream();
   if (iStep % 100 == 0) {
-    cudaDeviceSynchronize();
+    cuda::synchronize(current);
     lattice.inspect<CollectMomentsF>(bulk_mask, moments_rho.device(), moments_u.device());
     renderSliceViewToTexture<<<
       dim3(cuboid.nX / 32 + 1, cuboid.nY / 32 + 1),

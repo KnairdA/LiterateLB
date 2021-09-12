@@ -4,31 +4,30 @@
 #include <vector>
 #include <cstring>
 
+#include <cuda/runtime_api.hpp>
+
 template <typename T>
 class DeviceBuffer {
 protected:
   const std::size_t _size;
-  T* _data;
+  cuda::device_t _device;
+  cuda::memory::device::unique_ptr<T[]> _data;
 
 public:
   DeviceBuffer(std::size_t size):
-    _size(size) {
-    cudaMalloc(&_data, _size*sizeof(T));
-    cudaMemset(_data, 0, _size*sizeof(T));
-  }
+    _size(size),
+    _device(cuda::device::current::get()),
+    _data(cuda::memory::device::make_unique<T[]>(_device, size))
+  { }
   DeviceBuffer(const T* data, std::size_t size):
     DeviceBuffer(size) {
-    cudaMemcpy(_data, data, size*sizeof(T), cudaMemcpyHostToDevice);
+    cuda::memory::copy(_data.get(), data, size*sizeof(T));
   }
   DeviceBuffer(const std::vector<T>& data):
     DeviceBuffer(data.data(), data.size()) { }
- 
-  ~DeviceBuffer() {
-    cudaFree(_data);
-  }
 
   T* device() {
-    return _data;
+    return _data.get();
   }
 
   std::size_t size() const {
@@ -40,7 +39,7 @@ template <typename T>
 class SharedVector : public DeviceBuffer<T> {
 private:
   std::unique_ptr<T[]> _host_data;
- 
+
 public:
   SharedVector(std::size_t size):
     DeviceBuffer<T>(size),
@@ -57,11 +56,11 @@ public:
   }
 
   void syncHostFromDevice() {
-    cudaMemcpy(_host_data.get(), this->_data, this->_size*sizeof(T), cudaMemcpyDeviceToHost);
+    cuda::memory::copy(_host_data.get(), this->_data.get(), this->_size*sizeof(T));
   }
 
   void syncDeviceFromHost() {
-    cudaMemcpy(this->_data, _host_data.get(), this->_size*sizeof(T), cudaMemcpyHostToDevice);
+    cuda::memory::copy(this->_data.get(), _host_data.get(), this->_size*sizeof(T));
   }
 
 };
@@ -103,7 +102,7 @@ public:
 
   DeviceTexture(descriptor::CuboidD<3> c):
     DeviceTexture(c.nX, c.nY, c.nZ) { }
-  
+
   ~DeviceTexture() {
     cudaFreeArray(_array);
   }

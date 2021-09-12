@@ -12,7 +12,7 @@ using T = float;
 using DESCRIPTOR = descriptor::D3Q19;
 
 void simulate(descriptor::Cuboid<DESCRIPTOR> cuboid, std::size_t nStep) {
-  cudaSetDevice(0);
+  auto current = cuda::device::current::get();
 
   Lattice<DESCRIPTOR,T> lattice(cuboid);
   
@@ -30,7 +30,7 @@ void simulate(descriptor::Cuboid<DESCRIPTOR> cuboid, std::size_t nStep) {
   auto box_mask  = materials.mask_of_material(2);
   auto lid_mask  = materials.mask_of_material(3);
   
-  cudaDeviceSynchronize();
+  cuda::synchronize(current);
 
   for (std::size_t iStep=0; iStep < 100; ++iStep) {
     lattice.apply(Operator(BgkCollideO(), bulk_mask, 0.56),
@@ -39,7 +39,7 @@ void simulate(descriptor::Cuboid<DESCRIPTOR> cuboid, std::size_t nStep) {
     lattice.stream();
   }
 
-  cudaDeviceSynchronize();
+  cuda::synchronize(current);
 
   auto start = timer::now();
 
@@ -50,7 +50,7 @@ void simulate(descriptor::Cuboid<DESCRIPTOR> cuboid, std::size_t nStep) {
     lattice.stream();
   }
 
-  cudaDeviceSynchronize();
+  cuda::synchronize(current);
 
   auto mlups = timer::mlups(cuboid.volume, nStep, start);
 
@@ -58,6 +58,10 @@ void simulate(descriptor::Cuboid<DESCRIPTOR> cuboid, std::size_t nStep) {
 }
 
 int main(int argc, char* argv[]) {
+  if (cuda::device::count() == 0) {
+    std::cerr << "No CUDA devices on this system" << std::endl;
+    return -1;
+  }
   if (argc != 3) {
     std::cerr << "Invalid parameter count" << std::endl;
     return -1;

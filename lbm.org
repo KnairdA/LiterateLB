@@ -16,7 +16,7 @@ to a set of interesting examples. All of this runs on GPUs using CUDA near the m
 
 *This document is a [[*Open tasks][work in progress]].*
 #+BEGIN_EXPORT html
-<video style="width:100%" src="https://literatelb.org/talk/fire.webm" onloadeddata="this.play();" playsinline loop muted/>
+<video style="width:100%" src="https://literatelb.org/media/fire.webm" playsinline controls loop muted/>
 #+END_EXPORT
 #+END_ABSTRACT
 #+TOC: headlines 2
@@ -1349,6 +1349,7 @@ to access it.
 #include "kernel/propagate.h"
 
 #include <cuda.h>
+#include <cuda/runtime_api.hpp>
 #+END_SRC
 
 Our code employs the /Periodic Shift (PS)/ cite:kummerlanderImplicitPropagationDirectly2021 propagation
@@ -1404,6 +1405,7 @@ protected:
 
 public:
   CyclicPopulationBuffer(descriptor::Cuboid<DESCRIPTOR> cuboid);
+  ~CyclicPopulationBuffer();
 
   LatticeView<DESCRIPTOR,S> view() {
     return LatticeView<DESCRIPTOR,S>{ _cuboid, _population.device() };
@@ -1420,15 +1422,13 @@ out that this can be done at virtually no cost by using the in-hardware virtual 
 logic. Doing so requires the array sizes to be exact multiples of the device page size.
 
 #+BEGIN_SRC cpp :tangle tangle/LLBM/propagate.h
-std::size_t getDevicePageSize(int device_id=-1) {
-  if (device_id == -1) {
-    cudaGetDevice(&device_id);
-  }
+std::size_t getDevicePageSize() {
+  auto device = cuda::device::current::get();
   std::size_t granularity = 0;
   CUmemAllocationProp prop = {};
   prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
   prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-  prop.location.id = device_id;
+  prop.location.id = device.id();
   cuMemGetAllocationGranularity(&granularity, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM);
   return granularity;
 }
@@ -1457,8 +1457,7 @@ physical array in virtual memory.
 To do this we first need to know which device is currently selected.
 
 #+BEGIN_SRC cpp :tangle tangle/LLBM/propagate.h
-  int device_id = -1;
-  cudaGetDevice(&device_id);
+  auto device = cuda::device::current::get();
 #+END_SRC
 
 Using this device ID, a device-pinned address area large enough to fit two full views of the
@@ -1467,7 +1466,7 @@ lattice can be reserved.
 #+BEGIN_SRC cpp :tangle tangle/LLBM/propagate.h
   _prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
   _prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-  _prop.location.id = device_id;
+  _prop.location.id = device.id();
   cuMemAddressReserve(&_ptr, 2 * _volume * DESCRIPTOR::q, 0, 0, 0);
 #+END_SRC
 
@@ -1488,7 +1487,7 @@ the correct access flags
 
 #+BEGIN_SRC cpp :tangle tangle/LLBM/propagate.h
   _access.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-  _access.location.id = 0;
+  _access.location.id = device.id();
   _access.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
   cuMemSetAccess(_ptr, 2 * _volume * DESCRIPTOR::q, &_access, 1);
 #+END_SRC
@@ -1507,12 +1506,26 @@ we also need to store those somewhere.
 
 #+BEGIN_SRC cpp :tangle tangle/LLBM/propagate.h
   for (unsigned iPop=0; iPop < DESCRIPTOR::q; ++iPop) {
-    _base[iPop] = device() + iPop * 2 * (_volume / sizeof(S));
+    _base[iPop] = this->device() + iPop * 2 * (_volume / sizeof(S));
     _population[iPop] = _base[iPop] + iPop * ((_volume / sizeof(S)) / DESCRIPTOR::q);
   }
 
   _base.syncDeviceFromHost();
   _population.syncDeviceFromHost();
+}
+#+END_SRC
+
+Finally, once the population buffer is no longer needed, we should also release the
+mapped memory again.
+
+#+BEGIN_SRC cpp :tangle tangle/LLBM/propagate.h
+template <typename DESCRIPTOR, typename S>
+CyclicPopulationBuffer<DESCRIPTOR,S>::~CyclicPopulationBuffer() {
+  cuMemUnmap(_ptr, 2 * _volume * DESCRIPTOR::q);
+  for (unsigned iPop=0; iPop < DESCRIPTOR::q; ++iPop) {
+    cuMemRelease(_handle[iPop]);
+  }
+  cuMemAddressFree(_ptr, 2 * _volume * DESCRIPTOR::q);
 }
 #+END_SRC
 
@@ -1558,7 +1571,9 @@ for (unsigned iPop=0; iPop < DESCRIPTOR::q; ++iPop) {
 #+BEGIN_SRC cpp :tangle tangle/LLBM/propagate.h :noweb no
 template <typename DESCRIPTOR, typename S>
 void CyclicPopulationBuffer<DESCRIPTOR,S>::stream() {
-  propagate<DESCRIPTOR,S><<<1,1>>>(view(), _base.device(), _volume / sizeof(S));
+  cuda::launch(propagate<DESCRIPTOR,S>,
+               cuda::launch_configuration_t(1,1),
+               view(), _base.device(), _volume / sizeof(S));
 }
 #+END_SRC
 
@@ -1873,6 +1888,8 @@ SignedDistanceBoundary(Lattice<DESCRIPTOR,T,S>&, CellMaterials<DESCRIPTOR>&, SDF
 #include <memory>
 #include <vector>
 #include <cstring>
+
+#include <cuda/runtime_api.hpp>
 #+END_SRC
 
 Most memory of our simulation resides solely on the GPU. While we already defined a data structure for
@@ -1884,7 +1901,8 @@ template <typename T>
 class DeviceBuffer {
 protected:
   const std::size_t _size;
-  T* _data;
+  cuda::device_t _device;
+  cuda::memory::device::unique_ptr<T[]> _data;
 #+END_SRC
 
 Note that the value of the =_data= pointer is going to be a address in GPU memory. We only expose access to it
@@ -1896,19 +1914,15 @@ host.
 #+BEGIN_SRC cpp :tangle tangle/LLBM/memory.h
 public:
   DeviceBuffer(std::size_t size):
-    _size(size) {
-    cudaMalloc(&_data, _size*sizeof(T));
-    cudaMemset(_data, 0, _size*sizeof(T));
-  }
+    _size(size),
+    _device(cuda::device::current::get()),
+    _data(cuda::memory::device::make_unique<T[]>(_device, size))
+  { }
   <<device-buffer-load-from-plain-data>>
   <<device-buffer-load-from-std-vector>>
- 
-  ~DeviceBuffer() {
-    cudaFree(_data);
-  }
 
   T* device() {
-    return _data;
+    return _data.get();
   }
 
   std::size_t size() const {
@@ -1924,7 +1938,7 @@ of a pointer and the size.
 #+BEGIN_SRC cpp :eval no
 DeviceBuffer(const T* data, std::size_t size):
   DeviceBuffer(size) {
-  cudaMemcpy(_data, data, size*sizeof(T), cudaMemcpyHostToDevice);
+  cuda::memory::copy(_data.get(), data, size*sizeof(T));
 }
 #+END_SRC
 
@@ -1947,7 +1961,7 @@ template <typename T>
 class SharedVector : public DeviceBuffer<T> {
 private:
   std::unique_ptr<T[]> _host_data;
- 
+
 public:
   SharedVector(std::size_t size):
     DeviceBuffer<T>(size),
@@ -1964,11 +1978,11 @@ public:
   }
 
   void syncHostFromDevice() {
-    cudaMemcpy(_host_data.get(), this->_data, this->_size*sizeof(T), cudaMemcpyDeviceToHost);
+    cuda::memory::copy(_host_data.get(), this->_data.get(), this->_size*sizeof(T));
   }
 
   void syncDeviceFromHost() {
-    cudaMemcpy(this->_data, _host_data.get(), this->_size*sizeof(T), cudaMemcpyHostToDevice);
+    cuda::memory::copy(this->_data.get(), _host_data.get(), this->_size*sizeof(T));
   }
 
 };
@@ -2024,7 +2038,7 @@ public:
 
   DeviceTexture(descriptor::CuboidD<3> c):
     DeviceTexture(c.nX, c.nY, c.nZ) { }
-  
+
   ~DeviceTexture() {
     cudaFreeArray(_array);
   }
@@ -2525,156 +2539,24 @@ struct post_process_by_spatial_cell_mask { };
 }
 #+END_SRC
 
+Generally speaking we want to avoid control flow branching inside of GPU kernels. However, it can
+make sense to group multiple masked operators into a single lattice pass of a single kernel using some
+small number of branches instead of launching a separate branch-free kernel for each operator.
+
+In fact, the most common type of operator call we will use for the collisions in our simulations is the
+fused application of a set of masked operators /curried/ with their arguments.
+
 #+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
 template <typename... OPERATOR>
 void apply(OPERATOR... ops) {
   const auto block_size = 32;
   const auto block_count = (_cuboid.volume + block_size - 1) / block_size;
-  kernel::call_operators<DESCRIPTOR,T,S,OPERATOR...><<<block_count,block_size>>>(
-    _population.view(), ops...
-  );
+  cuda::launch(kernel::call_operators<DESCRIPTOR,T,S,OPERATOR...>,
+               cuda::launch_configuration_t(block_count, block_size),
+               _population.view(),
+               ops...);
 }
 #+END_SRC
-
-The dispatching method =apply= calls the appropriate overload by instantiating the type defined by =OPERATOR::call_tag= and passing
-it on to =call_operator= alongside any other arguments. Note that the dispatching function and the overloaded functions have to be of
-different names to prevent infinite recursion as the variadic parameter pack could of course also capture tags.
-
-#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
-template <typename OPERATOR, typename... ARGS>
-void apply(ARGS&&... args) {
-  call_operator<OPERATOR>(typename OPERATOR::call_tag{}, std::forward<ARGS&&>(args)...);
-}
-#+END_SRC
-
-As cell IDs can be extracted from both a list of them and a mask applied to the full set we can use the different types of device buffer
-specializations to distinguish between masked and list-based applications of cell-ID-accepting kernels.
-
-#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
-template <typename OPERATOR, typename... ARGS>
-void call_operator(tag::call_by_cell_id, DeviceBuffer<std::size_t>& cells, ARGS... args) {
-  const auto block_size = 32;
-  const auto block_count = (cells.size() + block_size - 1) / block_size;
-  kernel::call_operator<OPERATOR,DESCRIPTOR,T,S,ARGS...><<<block_count,block_size>>>(
-    _population.view(), cells.device(), cells.size(), std::forward<ARGS>(args)...
-  );
-}
-#+END_SRC
-
-#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
-template <typename OPERATOR, typename... ARGS>
-void call_operator(tag::call_by_cell_id, DeviceBuffer<bool>& mask, ARGS... args) {
-  const auto block_size = 32;
-  const auto block_count = (_cuboid.volume + block_size - 1) / block_size;
-  kernel::call_operator<OPERATOR,DESCRIPTOR,T,S,ARGS...><<<block_count,block_size>>>(
-    _population.view(), mask.device(), std::forward<ARGS>(args)...
-  );
-}
-#+END_SRC
-
-The list-based application doesn't perform any detection of device buffer types but can be thought of as simply iterating
-over =count= elements and passing the current index to the individual device operator. This is useful when calling e.g. the
-interpolated bounce back kernel as there is no 1:1 mapping between threads and cells to be found there.
-
-#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
-template <typename OPERATOR, typename... ARGS>
-void call_operator(tag::call_by_list_index, std::size_t count, ARGS... args) {
-  const auto block_size = 32;
-  const auto block_count = (count + block_size - 1) / block_size;
-  kernel::call_operator_using_list<OPERATOR,DESCRIPTOR,T,S,ARGS...><<<block_count,block_size>>>(
-    _population.view(), count, std::forward<ARGS>(args)...
-  );
-}
-#+END_SRC
-
-We provide corresponding =inspect= callers for read-only functor kernels.
-
-#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
-template <typename FUNCTOR, typename... ARGS>
-void inspect(ARGS&&... args) {
-  call_functor<FUNCTOR>(typename FUNCTOR::call_tag{}, std::forward<ARGS&&>(args)...);
-}
-#+END_SRC
-
-#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
-template <typename FUNCTOR, typename... ARGS>
-void call_functor(tag::call_by_cell_id, DeviceBuffer<std::size_t>& cells, ARGS... args) {
-  const auto block_size = 32;
-  const auto block_count = (cells.size() + block_size - 1) / block_size;
-  kernel::call_functor<FUNCTOR,DESCRIPTOR,T,S,ARGS...><<<block_count,block_size>>>(
-    _population.view(), cells.device(), cells.size(), std::forward<ARGS>(args)...
-  );
-}
-#+END_SRC
-
-#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
-template <typename FUNCTOR, typename... ARGS>
-void call_functor(tag::call_by_cell_id, DeviceBuffer<bool>& mask, ARGS... args) {
-  const auto block_size = 32;
-  const auto block_count = (_cuboid.volume + block_size - 1) / block_size;
-  kernel::call_functor<FUNCTOR,DESCRIPTOR,T,S,ARGS...><<<block_count,block_size>>>(
-    _population.view(), mask.device(), std::forward<ARGS>(args)...
-  );
-}
-#+END_SRC
-
-When we evaluate functors on the full domain to e.g. extract velocity norms into a 3d texture for volumetric visualization,
-access to the spatial location of each cell is required. We could implement this by inverting each cell ID but it is both
-more efficient and more clear to use the possibility of calling CUDA kernels in a 3D grid for this kind of work.
-
-#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
-template <typename FUNCTOR, typename... ARGS>
-void call_functor(tag::call_by_spatial_cell_mask, DeviceBuffer<bool>& mask, ARGS... args) {
-  const dim3 block(32,8,4);
-  const dim3 grid((_cuboid.nX + block.x - 1) / block.x,
-                  (_cuboid.nY + block.y - 1) / block.y,
-                  (_cuboid.nZ + block.z - 1) / block.z);
-  kernel::call_spatial_functor<FUNCTOR,DESCRIPTOR,T,S,ARGS...><<<grid,block>>>(
-    _population.view(), mask.device(), std::forward<ARGS>(args)...
-  );
-}
-#+END_SRC
-
-Sometimes we only want to do post-processing on e.g. the velocity moments without recalculating anything from the
-populations. Strictly speaking such a kernel should not be called from the control class but as it is quite convenient
-in practice we do so anyway:
-
-#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
-template <typename OPERATOR, typename... ARGS>
-void helper(ARGS&&... args) {
-  tagged_helper<OPERATOR>(typename OPERATOR::call_tag{}, std::forward<ARGS&&>(args)...);
-}
-#+END_SRC
-
-#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
-template <typename OPERATOR, typename... ARGS>
-void tagged_helper(tag::post_process_by_list_index, std::size_t count, ARGS... args) {
-  const auto block_size = 32;
-  const auto block_count = (count + block_size - 1) / block_size;
-  kernel::call_operator_using_list<OPERATOR,DESCRIPTOR,T,S,ARGS...><<<block_count,block_size>>>(
-    DESCRIPTOR(), count, std::forward<ARGS>(args)...
-  );
-}
-#+END_SRC
-
-#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
-template <typename OPERATOR, typename... ARGS>
-void tagged_helper(tag::post_process_by_spatial_cell_mask, DeviceBuffer<bool>& mask, ARGS... args) {
-  const dim3 block(32,8,4);
-  const dim3 grid((_cuboid.nX + block.x - 1) / block.x,
-                  (_cuboid.nY + block.y - 1) / block.y,
-                  (_cuboid.nZ + block.z - 1) / block.z);
-  kernel::call_spatial_operator<OPERATOR,DESCRIPTOR,T,S,ARGS...><<<grid,block>>>(
-    _cuboid, mask.device(), std::forward<ARGS>(args)...
-  );
-}
-
-};
-#+END_SRC
-
-Generally speaking we want to avoid control flow branching inside of GPU kernels. However it can
-make sense to group multiple masked operators into a single lattice pass of a single kernel using some
-small number of branches instead of launching a separate branch-free kernel for each operator.
 
 In order to generate a single kernel from multiple operators curried with their respective arguments
 we implement a small =Operator= helper class.
@@ -2720,6 +2602,135 @@ template <typename OPERATOR, typename... ARGS>
 Operator(OPERATOR, DeviceBuffer<bool>&, ARGS... args) -> Operator<OPERATOR,std::remove_reference_t<ARGS>...>;
 #+END_SRC
 
+For single operator application the =apply= dispatcher calls the appropriate overload by instantiating the type defined
+by =OPERATOR::call_tag= and passing it on to =call_operator= alongside any other arguments. Note that the dispatching
+function and the overloaded functions have to be of different names to prevent infinite recursion as the variadic parameter
+pack could of course also capture tags.
+
+#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
+template <typename OPERATOR, typename... ARGS>
+void apply(ARGS&&... args) {
+  call_operator<OPERATOR>(typename OPERATOR::call_tag{}, std::forward<ARGS&&>(args)...);
+}
+#+END_SRC
+
+One common case is to apply a =call_by_cell_id= operator on a list of such IDs.
+
+#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
+template <typename OPERATOR, typename... ARGS>
+void call_operator(tag::call_by_cell_id, DeviceBuffer<std::size_t>& cells, ARGS... args) {
+  const auto block_size = 32;
+  const auto block_count = (cells.size() + block_size - 1) / block_size;
+  cuda::launch(kernel::call_operator<OPERATOR,DESCRIPTOR,T,S,ARGS...>,
+               cuda::launch_configuration_t(block_count, block_size),
+               _population.view(),
+               cells.device(), cells.size(),
+               std::forward<ARGS>(args)...);
+}
+#+END_SRC
+
+The more generic version of this caller is list-based application. These calls can be thought of as simply iterating
+over =count= elements and passing the current index to the individual device operator. This is useful when calling
+e.g. the interpolated bounce back kernel as there is no 1:1 mapping between threads and cells to be found there.
+
+#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
+template <typename OPERATOR, typename... ARGS>
+void call_operator(tag::call_by_list_index, std::size_t count, ARGS... args) {
+  const auto block_size = 32;
+  const auto block_count = (count + block_size - 1) / block_size;
+  cuda::launch(kernel::call_operator_using_list<OPERATOR,DESCRIPTOR,T,S,ARGS...>,
+               cuda::launch_configuration_t(block_count, block_size),
+               _population.view(),
+               count,
+               std::forward<ARGS>(args)...);
+}
+#+END_SRC
+
+Next, we provide corresponding =inspect= callers for read-only functor kernels.
+
+#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
+template <typename FUNCTOR, typename... ARGS>
+void inspect(ARGS&&... args) {
+  call_functor<FUNCTOR>(typename FUNCTOR::call_tag{}, std::forward<ARGS&&>(args)...);
+}
+#+END_SRC
+
+Different from cell-based operators, the common case for functors is to evaluate a =call_by_cell_id=
+functor using a mask (specifically the bulk mask) instead of a list.
+
+#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
+template <typename FUNCTOR, typename... ARGS>
+void call_functor(tag::call_by_cell_id, DeviceBuffer<bool>& mask, ARGS... args) {
+  const auto block_size = 32;
+  const auto block_count = (_cuboid.volume + block_size - 1) / block_size;
+  cuda::launch(kernel::call_functor<FUNCTOR,DESCRIPTOR,T,S,ARGS...>,
+               cuda::launch_configuration_t(block_count, block_size),
+               _population.view(),
+               mask.device(),
+               std::forward<ARGS>(args)...);
+}
+#+END_SRC
+
+When we evaluate functors on the full domain to e.g. extract velocity norms into a 3d texture for volumetric visualization,
+access to the spatial location of each cell is required. We could implement this by inverting each cell ID but it is both
+more efficient and more clear to use the possibility of calling CUDA kernels in a 3D grid for this kind of work.
+
+#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
+template <typename FUNCTOR, typename... ARGS>
+void call_functor(tag::call_by_spatial_cell_mask, DeviceBuffer<bool>& mask, ARGS... args) {
+  const dim3 block(32,8,4);
+  const dim3 grid((_cuboid.nX + block.x - 1) / block.x,
+                  (_cuboid.nY + block.y - 1) / block.y,
+                  (_cuboid.nZ + block.z - 1) / block.z);
+  cuda::launch(kernel::call_spatial_functor<FUNCTOR,DESCRIPTOR,T,S,ARGS...>,
+               cuda::launch_configuration_t(grid, block),
+               _population.view(),
+               mask.device(),
+               std::forward<ARGS>(args)...);
+}
+#+END_SRC
+
+Sometimes we only want to do post-processing on e.g. the velocity moments without recalculating anything from the
+populations. Strictly speaking such a kernel should not be called from the control class but as it is quite convenient
+in practice we do so anyway:
+
+#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
+template <typename OPERATOR, typename... ARGS>
+void helper(ARGS&&... args) {
+  tagged_helper<OPERATOR>(typename OPERATOR::call_tag{}, std::forward<ARGS&&>(args)...);
+}
+#+END_SRC
+
+#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
+template <typename OPERATOR, typename... ARGS>
+void tagged_helper(tag::post_process_by_list_index, std::size_t count, ARGS... args) {
+  const auto block_size = 32;
+  const auto block_count = (count + block_size - 1) / block_size;
+  cuda::launch(kernel::call_operator_using_list<OPERATOR,DESCRIPTOR,T,S,ARGS...>,
+               cuda::launch_configuration_t(block_count, block_size),
+               DESCRIPTOR(),
+               count,
+               std::forward<ARGS>(args)...);
+}
+#+END_SRC
+
+#+BEGIN_SRC cpp :noweb no :tangle tangle/LLBM/lattice.h
+template <typename OPERATOR, typename... ARGS>
+void tagged_helper(tag::post_process_by_spatial_cell_mask, DeviceBuffer<bool>& mask, ARGS... args) {
+  const dim3 block(32,8,4);
+  const dim3 grid((_cuboid.nX + block.x - 1) / block.x,
+                  (_cuboid.nY + block.y - 1) / block.y,
+                  (_cuboid.nZ + block.z - 1) / block.z);
+  cuda::launch(kernel::call_spatial_operator<OPERATOR,DESCRIPTOR,T,S,ARGS...>,
+               cuda::launch_configuration_t(grid, block),
+               _cuboid,
+               mask.device(),
+               std::forward<ARGS>(args)...);
+}
+
+};
+#+END_SRC
+
 ** Kernel Execution
 #+BEGIN_SRC cpp :tangle tangle/LLBM/kernel/executor.h
 #pragma once
@@ -2749,30 +2760,6 @@ __global__ void call_operator(
       return;
   }
   const std::size_t gid = cells[index];
-
-  S f_curr[DESCRIPTOR::q];
-  S f_next[DESCRIPTOR::q];
-  <<read-f-curr>>
-  OPERATOR::template apply<T,S>(DESCRIPTOR(), f_curr, f_next, gid, std::forward<ARGS>(args)...);
-  <<write-f-next>>
-}
-#+END_SRC
-
-Besides applying an operator to each member of a cell list we also want the possibility
-of using a mask instead. Doing this reduces the required memory bandwidth for large
-ratios between masked and unmasked cells.
-
-#+BEGIN_SRC cpp :tangle tangle/LLBM/kernel/executor.h
-template <typename OPERATOR, typename DESCRIPTOR, typename T, typename S, typename... ARGS>
-__global__ void call_operator(
-    LatticeView<DESCRIPTOR,S> lattice
-  , bool* mask
-  , ARGS... args
-) {
-  const std::size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
-  if (!(gid < lattice.cuboid.volume) || !mask[gid]) {
-      return;
-  }
 
   S f_curr[DESCRIPTOR::q];
   S f_next[DESCRIPTOR::q];
@@ -2844,25 +2831,6 @@ __global__ void call_operator_using_list(
       return;
   }
   OPERATOR::template apply<T,S>(lattice, index, count, std::forward<ARGS>(args)...);
-}
-#+END_SRC
-
-Even more general is the following caller kernel that doesn't assume anything about the
-lattice data required or written to by the wrapped operator. This is mostly used for easily
-calling post-processing kernels that do not directly operate on lattice data.
-
-#+BEGIN_SRC cpp :tangle tangle/LLBM/kernel/executor.h
-template <typename OPERATOR, typename DESCRIPTOR, typename T, typename S, typename... ARGS>
-__global__ void call_operator_using_list(
-    DESCRIPTOR descriptor
-  , std::size_t count
-  , ARGS... args
-) {
-  const std::size_t index = blockIdx.x * blockDim.x + threadIdx.x;
-  if (!(index < count)) {
-      return;
-  }
-  OPERATOR::template apply<T,S>(descriptor, index, count, std::forward<ARGS>(args)...);
 }
 #+END_SRC
 
@@ -2959,7 +2927,7 @@ public:
   descriptor::Cuboid<DESCRIPTOR> cuboid() const {
     return _cuboid;
   };
- 
+
   <<cell-materials-basic-access>>
   <<cell-materials-fancy-setters>>
   <<cell-materials-get-list>>
@@ -5049,7 +5017,11 @@ using T = float;
 using DESCRIPTOR = descriptor::D2Q9;
 
 int main() {
-cudaSetDevice(0);
+if (cuda::device::count() == 0) {
+  std::cerr << "No CUDA devices on this system" << std::endl;
+  return -1;
+}
+auto current = cuda::device::current::get();
 #+END_SRC
 
 After including the relevant headers and declaring which floating point precision and descriptor
@@ -5127,7 +5099,7 @@ std::size_t iStep = 0;
 while (window.isOpen()) {
   <<ldc-simulation-step>>
   if (iStep % 100 == 0) {
-    cudaDeviceSynchronize();
+    cuda::synchronize(current);
     <<ldc-visualization-step>>
     window.draw([&]() {
       ImGui::Begin("Render");
@@ -5154,7 +5126,11 @@ using T = float;
 using DESCRIPTOR = descriptor::D3Q19;
 
 int main() {
-cudaSetDevice(0);
+if (cuda::device::count() == 0) {
+  std::cerr << "No CUDA devices on this system" << std::endl;
+  return -1;
+}
+auto current = cuda::device::current::get();
 #+END_SRC
 
 After including the relevant headers we construct the D3Q19 lattice.
@@ -5186,7 +5162,7 @@ auto bulk_mask = materials.mask_of_material(1);
 auto wall_mask = materials.mask_of_material(2);
 auto lid_mask  = materials.mask_of_material(3);
 
-cudaDeviceSynchronize();
+cuda::synchronize(current);
 #+END_SRC
 
 In order to model the flow we employ standard BGK collisions in the bulk. The side and bottom
@@ -5232,7 +5208,11 @@ using T = float;
 using DESCRIPTOR = descriptor::D2Q9;
 
 int main() {
-cudaSetDevice(0);
+if (cuda::device::count() == 0) {
+  std::cerr << "No CUDA devices on this system" << std::endl;
+  return -1;
+}
+auto current = cuda::device::current::get();
 #+END_SRC
 
 Adding another non-spinning cylinder allows for direct comparison and also produces a Kármán vortex street.
@@ -5316,7 +5296,7 @@ auto edge_mask = materials.mask_of_material(5);
 #+END_SRC
 
 #+BEGIN_SRC cpp :tangle tangle/magnus.cu
-cudaDeviceSynchronize();
+cuda::synchronize(current);
 #+END_SRC
 
 During each timestep we apply all purely local collision operators in a single fused
@@ -5377,7 +5357,7 @@ std::size_t iStep = 0;
 while (window.isOpen()) {
   <<magnus-simulation-step>>
   if (iStep % 200 == 0) {
-    cudaDeviceSynchronize();
+    cuda::synchronize(current);
     <<magnus-visualization-step>>
     window.draw([&]() {
       ImGui::Begin("Render");
@@ -5412,7 +5392,11 @@ using T = float;
 using DESCRIPTOR = descriptor::D3Q19;
 
 int main() {
-cudaSetDevice(0);
+if (cuda::device::count() == 0) {
+  std::cerr << "No CUDA devices on this system" << std::endl;
+  return -1;
+}
+auto current = cuda::device::current::get();
 #+END_SRC
 
 After including the relevant headers we construct the D3Q19 lattice.
@@ -5476,7 +5460,7 @@ auto inflow_mask  = materials.mask_of_material(4);
 auto outflow_mask = materials.mask_of_material(5);
 auto edge_mask    = materials.mask_of_material(6);
 
-cudaDeviceSynchronize();
+cuda::synchronize(current);
 #+END_SRC
 
 In order to model the flow we employ standard BGK collisions in the bulk. The channel
@@ -5530,7 +5514,11 @@ using T = float;
 using DESCRIPTOR = descriptor::D3Q19;
 
 int main() {
-cudaSetDevice(0);
+if (cuda::device::count() == 0) {
+  std::cerr << "No CUDA devices on this system" << std::endl;
+  return -1;
+}
+auto current = cuda::device::current::get();
 #+END_SRC
 
 After including the relevant headers we construct the D3Q19 lattice.
@@ -5593,7 +5581,7 @@ auto bulk_list = materials.list_of_material(1);
 auto wall_mask = materials.mask_of_material(2);
 auto wall_list = materials.list_of_material(2);
 
-cudaDeviceSynchronize();
+cuda::synchronize(current);
 #+END_SRC
 
 Due to the large quantity of inactive cells in this example we call the collision
@@ -5648,7 +5636,11 @@ using T = float;
 using DESCRIPTOR = descriptor::D3Q19;
 
 int main() {
-cudaSetDevice(0);
+if (cuda::device::count() == 0) {
+  std::cerr << "No CUDA devices on this system" << std::endl;
+  return -1;
+}
+auto current = cuda::device::current::get();
 #+END_SRC
 
 After including the relevant headers we construct the D3Q19 lattice.
@@ -5698,7 +5690,7 @@ auto boundary_mask = materials.mask_of_material(2);
 auto inflow_mask   = materials.mask_of_material(3);
 auto outflow_mask  = materials.mask_of_material(4);
 
-cudaDeviceSynchronize();
+cuda::synchronize(current);
 #+END_SRC
 
 In order to model the turbulence we employ Smagorinsky BGK collisions in the bulk.
@@ -5819,7 +5811,7 @@ auto bulk_mask = materials.mask_of_material(1);
 auto box_mask  = materials.mask_of_material(2);
 auto lid_mask  = materials.mask_of_material(3);
 
-cudaDeviceSynchronize();
+cuda::synchronize(current);
 #+END_SRC
 
 The simulation step consists of BGK collisions in the bulk and bounce back boundaries at the sides.
@@ -5837,7 +5829,7 @@ and the floating point type to be used for lattice data and computations.
 
 #+BEGIN_SRC cpp :tangle tangle/benchmark-ldc.cu
 void simulate(descriptor::Cuboid<DESCRIPTOR> cuboid, std::size_t nStep) {
-  cudaSetDevice(0);
+  auto current = cuda::device::current::get();
 
   <<benchmark-ldc-setup-lattice>>
 
@@ -5845,7 +5837,7 @@ void simulate(descriptor::Cuboid<DESCRIPTOR> cuboid, std::size_t nStep) {
     <<benchmark-ldc-simulation-step>>
   }
 
-  cudaDeviceSynchronize();
+  cuda::synchronize(current);
 
   auto start = timer::now();
 
@@ -5853,7 +5845,7 @@ void simulate(descriptor::Cuboid<DESCRIPTOR> cuboid, std::size_t nStep) {
     <<benchmark-ldc-simulation-step>>
   }
 
-  cudaDeviceSynchronize();
+  cuda::synchronize(current);
 
   auto mlups = timer::mlups(cuboid.volume, nStep, start);
 
@@ -5866,6 +5858,10 @@ some very basic CLI parameter handling in the =main= function.
 
 #+BEGIN_SRC cpp :tangle tangle/benchmark-ldc.cu
 int main(int argc, char* argv[]) {
+  if (cuda::device::count() == 0) {
+    std::cerr << "No CUDA devices on this system" << std::endl;
+    return -1;
+  }
   if (argc != 3) {
     std::cerr << "Invalid parameter count" << std::endl;
     return -1;
@@ -5918,7 +5914,6 @@ done
 :unnumbered: notoc
 :end:
 ** TODO Add more detailed explanations
-** TODO Add CUDA error handling
 ** TODO Expand example documentation
 ** TODO Add literature citations for method sections
 ** TODO Add physical dimensionalization
