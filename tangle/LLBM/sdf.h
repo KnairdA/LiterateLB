@@ -63,6 +63,15 @@ __device__ __host__ float sintersect(float a, float b, float k) {
   return lerp(b, a, h) + k*h*(1.f-h);
 }
 
+__device__ __host__ float3 twisted(float3 p, float k) {
+  float c = cos(k*p.y);
+  float s = sin(k*p.y);
+  float3  q = make_float3(0,0,p.y);
+  q.x = p.x*c + p.z*-s;
+  q.y = p.x*s + p.z* c;
+  return q;
+}
+
 }
 
 template <typename SDF>

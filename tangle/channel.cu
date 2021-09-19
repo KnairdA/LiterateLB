@@ -21,7 +21,7 @@ if (cuda::device::count() == 0) {
 }
 auto current = cuda::device::current::get();
 
-const descriptor::Cuboid<DESCRIPTOR> cuboid(448, 64, 64);
+const descriptor::Cuboid<DESCRIPTOR> cuboid(500, 100, 100);
 Lattice<DESCRIPTOR,T> lattice(cuboid);
 
 CellMaterials<DESCRIPTOR> materials(cuboid, [&cuboid](uint3 p) -> int {
@@ -46,9 +46,11 @@ for (std::size_t iX=0; iX < cuboid.nX; ++iX) {
 }
 
 auto obstacle = [cuboid] __host__ __device__ (float3 p) -> float {
-                  float3 q = p - make_float3(cuboid.nX/6, cuboid.nY/2, cuboid.nZ/2);
-                  return sdf::sphere(q, cuboid.nY/T{5});
-                };
+  p -= make_float3(cuboid.nX/5, cuboid.nY/2, cuboid.nZ/2);
+  float3 q = sdf::twisted(p, 0.01);
+  return sdf::sphere(p, cuboid.nY/3.5) + sin(0.2*q.x)*sin(0.2*q.y)*sin(0.2*q.z);
+};
+
 materials.sdf(obstacle, 0);
 SignedDistanceBoundary bouzidi(lattice, materials, obstacle, 1, 0);
 
@@ -66,10 +68,11 @@ renderer.add<QCriterionS>(lattice, bulk_mask, obstacle);
 renderer.add<CurlNormS>(lattice, bulk_mask, obstacle);
 renderer.add<VelocityNormS>(lattice, bulk_mask, obstacle);
 renderer.run([&](std::size_t iStep) {
-  const float tau = 0.51;
-  const float inflow = 0.05;
+  const float tau = 0.501;
+  const float smagorinsky = 0.1;
+  const float inflow = 0.04;
   
-  lattice.apply(Operator(BgkCollideO(), bulk_mask, tau),
+  lattice.apply(Operator(SmagorinskyBgkCollideO(), bulk_mask, tau, smagorinsky),
                 Operator(BounceBackFreeSlipO(), wall_mask_z, WallNormal<0,0,1>()),
                 Operator(BounceBackFreeSlipO(), wall_mask_y, WallNormal<0,1,0>()),
                 Operator(EquilibriumVelocityWallO(), inflow_mask, std::min(iStep*1e-4, 1.0)*inflow, WallNormal<1,0,0>()),
