@@ -32,7 +32,6 @@ link_libraries(
 	sfml-window
 	sfml-system
 	ImGui-SFML::ImGui-SFML
-  glm
   assets)
 
 file(GLOB EXAMPLES ${CMAKE_CURRENT_SOURCE_DIR}/tangle/*.cu)

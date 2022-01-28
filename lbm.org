@@ -4544,6 +4544,7 @@ Camera(float3 target, float distance):
   _distance(distance),
   _target(target.x, target.y, target.z),
   _rotating(false),
+  _rotation(1,0,0,0),
   _moving(false),
   _restricted_x(false),
   _restricted_y(false) {
